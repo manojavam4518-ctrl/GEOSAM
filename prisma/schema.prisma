@@ -1,0 +1,854 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+  OWNER
+  ORG_ADMIN
+}
+
+model Organization {
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  ownerId        String         @db.ObjectId
+  adminUserId    String?        @db.ObjectId
+  subscriptionId String?        @db.ObjectId
+  status         String         @default("ACTIVE") // ACTIVE, EXPIRED, INACTIVE
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  users          User[]
+  employees      Employee[]
+  attendances    Attendance[]
+  salaries       SalaryRecord[]
+  userLicenses   UserLicense[]
+  userLicensePurchases UserLicensePurchase[]
+  subscriptions  Subscription[]
+}
+
+model User {
+  id                        String          @id @default(auto()) @map("_id") @db.ObjectId
+  email                     String          @unique
+  name                      String
+  mobile                    String
+  company                   String
+  password                  String
+  role                      Role            @default(USER)
+  organizationId            String?         @db.ObjectId
+  organization              Organization?   @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  mustChangePassword        Boolean         @default(false)
+  emailVerified             Boolean         @default(false)
+  emailVerificationToken    String?
+  emailVerificationExpires  DateTime?
+  passwordResetToken        String?
+  passwordResetExpires      DateTime?
+  status                    String          @default("ACTIVE") // ACTIVE, DISABLED
+  assignedRoleId            String?         @db.ObjectId
+  assignedRoleName          String?
+  assignedModules           String[]        @default([])
+  isAdditionalUser          Boolean         @default(false)
+  userLicenseId             String?         @db.ObjectId
+  calculationsCount         Int             @default(0) // For tracking demo calculations limit (up to 10)
+  demoStartedAt             DateTime?       @default(now())
+  demoExpiresAt             DateTime?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  subscriptions             Subscription[]
+  payments                  Payment[]
+  invoices                  Invoice[]
+  deviceSessions            DeviceSession[]
+  calculations              Calculation[]
+  salesFollowUps            SalesFollowUp[]
+  userLicenses              UserLicense[]
+}
+
+model Employee {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?      @db.ObjectId
+  employeeId     String       // e.g. EMP-1001
+  name           String
+  mobile         String
+  email          String?
+  designation    String?      @default("Employee")
+  department     String?      @default("General")
+  joiningDate    DateTime?    @default(now())
+  status         String       @default("ACTIVE") // ACTIVE, INACTIVE
+  basicSalary    Float        @default(0.0)
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  attendances    Attendance[]
+  salaries       SalaryRecord[]
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([userId])
+}
+
+model Attendance {
+  id                  String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId      String       @db.ObjectId
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId          String       @db.ObjectId
+  employee            Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  userId              String?      @db.ObjectId
+  date                DateTime     // Normalized start of day date
+  status              String       // PRESENT, ABSENT, LEAVE, HALF_DAY
+  checkIn             DateTime?
+  checkOut            DateTime?
+  workingHours        String?
+  correctionRequested Boolean      @default(false)
+  correctionReason    String?
+  correctionStatus    String?      // NONE, PENDING, APPROVED, REJECTED
+  remarks             String?
+
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([userId])
+  @@index([date])
+}
+
+model SalaryRecord {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String       @db.ObjectId
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month          Int          // 1-12
+  year           Int          // e.g. 2026
+  basicSalary    Float        @default(0.0)
+  allowances     Float        @default(0.0)
+  deductions     Float        @default(0.0)
+  grossSalary    Float        @default(0.0)
+  netSalary      Float        @default(0.0)
+  paymentStatus  String       @default("UNPAID") // UNPAID, PAID
+  paymentDate    DateTime?
+  remarks        String?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([month, year])
+}
+
+model SubscriptionPlan {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                  String   @unique // e.g. Single Device, 3 Devices Plan, 5 Devices Plan, 10 Devices Plan, 20 Devices Plan
+  deviceLimit           Int
+  customRateCardLimit   Int      @default(0)
+  systemRateCardAccess  Boolean  @default(false)
+  rateComparisonEnabled Boolean  @default(false)
+  rateCardImportEnabled Boolean  @default(false)
+  rateCardExportEnabled Boolean  @default(false)
+  recommended           Boolean  @default(false)
+  price3Months          Float    // Admin configured price
+  price6Months          Float    // Admin configured price
+  price12Months         Float    // Admin configured price
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Subscription {
+  id                    String        @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId        String?       @db.ObjectId
+  organization          Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId                String        @db.ObjectId
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId                String        @db.ObjectId
+  planName              String
+  deviceLimit           Int
+  customRateCardLimit   Int      @default(0)
+  systemRateCardAccess  Boolean  @default(false)
+  rateComparisonEnabled Boolean  @default(false)
+  rateCardImportEnabled Boolean  @default(false)
+  rateCardExportEnabled Boolean  @default(false)
+  duration              Int      // 3, 6, 12 months
+  amount                Float
+  startDate             DateTime
+  endDate               DateTime
+  paymentRef            String   @db.ObjectId
+  status                String   @default("ACTIVE") // ACTIVE, EXPIRED, INACTIVE
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([endDate])
+}
+
+model Payment {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @db.ObjectId
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId          String   @db.ObjectId
+  planName        String
+  deviceLimit     Int
+  duration        Int      // 3, 6, 12 months
+  baseAmount      Float
+  gstAmount       Float
+  totalAmount     Float
+  billingDetails  Json     // Full Name, Email, Phone, Company, Address, City, State, Country, Pincode, GSTIN
+  invoiceRequired Boolean
+  paymentMethod   String   // UPI, BANK_TRANSFER
+  utr             String
+  screenshotUrl   String?
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  invoices        Invoice[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([utr])
+}
+
+model Invoice {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber  String   @unique
+  userId         String   @db.ObjectId
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentId      String   @db.ObjectId
+  payment        Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  date           DateTime @default(now())
+  planName       String
+  deviceLimit    Int
+  duration       Int
+  baseAmount     Float
+  gstAmount      Float
+  totalAmount    Float
+  billingDetails Json
+  startDate      DateTime
+  endDate        DateTime
+  paymentRef     String
+  pdfUrl         String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([paymentId])
+}
+
+model DeviceSession {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionToken String   @unique
+  deviceName   String
+  deviceType   String   // Desktop, Mobile, Tablet
+  browser      String
+  os           String
+  lastActive   DateTime @default(now())
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([active])
+}
+
+model Calculation {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @db.ObjectId
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit             String   // MM, CM, Inch, Feet
+  actualWeight     Float
+  volumetricWeight Float
+  chargeableWeight Float
+  divisor          Float
+  packageCount     Int
+  packages         Json     // Array of packages
+  shippingCost     Float?
+  rateCardId       String?
+  rateCardName     String?
+  destination      String?
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model CourierPartner {
+  id                       String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                     String   @unique
+  logoUrl                  String?
+  trackingUrl              String?
+  pincodeServiceabilityUrl String?
+  active                   Boolean  @default(true)
+  displayOrder             Int      @default(0)
+  createdAt                DateTime @default(now())
+
+  @@index([active])
+}
+
+model PaymentSettings {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  upiId               String
+  upiName             String
+  qrCodeUrl           String?
+  bankAccountHolder   String
+  bankName            String
+  bankAccountNumber   String
+  bankIfsc            String
+  bankBranch          String
+  bankAccountType     String
+  gstEnabled          Boolean  @default(true)
+  gstRate             Float    @default(18.0)
+  paymentInstructions String?
+  upiInstructions     String?
+  bankInstructions    String?
+  updatedAt           DateTime @updatedAt
+}
+
+model SMTPSettings {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  host       String
+  port       Int
+  username   String
+  password   String
+  encryption String   // SSL, TLS, NONE
+  fromName   String
+  fromEmail  String
+  updatedAt  DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique // VERIFY_EMAIL, WELCOME, PASSWORD_RESET, PAYMENT_SUBMITTED, PAYMENT_APPROVED, PAYMENT_REJECTED, SUBSCRIPTION_ACTIVATED, SUBSCRIPTION_EXPIRY_WARNING, INVOICE
+  subject   String
+  body      String   // Markdown or HTML template text
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  adminId         String?  @db.ObjectId
+  adminEmail      String?
+  userId          String?  @db.ObjectId
+  userEmail       String?
+  organizationId  String?  @db.ObjectId
+  action          String   // e.g. Payment approved, Login, Check-in, Plan price changed, etc.
+  timestamp       DateTime @default(now())
+  relatedRecordId String?
+  metadata        Json?
+
+  @@index([timestamp])
+  @@index([action])
+  @@index([adminId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+model WebsiteSettings {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  heroHeadline         String   @default("Calculate. Track. Manage. Ship Smarter.")
+  heroSubtitle         String   @default("GEO TRANSIT is an enterprise logistics utility platform designed to simplify volumetric calculations, pincode verification, and tracking.")
+  supportEmail         String   @default("support@geotransit.com")
+  contactPhone         String?
+  footerText           String   @default("© 2026 GEO TRANSIT. All rights reserved.")
+  demoDurationDays     Int      @default(10)
+  maxCustomRateCards   Int      @default(50)
+  updatedAt            DateTime @updatedAt
+}
+
+model CourierCompany {
+  id                       String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId                   String?   @db.ObjectId // Nullable for SYSTEM companies
+  name                     String
+  logoUrl                  String?   // URL or path to logo image file
+  trackingUrl              String?
+  pincodeServiceabilityUrl String?
+  active                   Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model RateCard {
+  id                       String    @id @default(auto()) @map("_id") @db.ObjectId
+  ownerType                String    // SYSTEM, USER
+  ownerId                  String?   @db.ObjectId // References User if USER
+  companyId                String?
+  courierCompanyId         String?   @db.ObjectId // References CourierCompany
+  serviceType              String    // Domestic, International
+  rateCardName             String
+  serviceName              String
+  rateCardType             String    // Courier, Cargo, Premium Service, LTL, PTL, Other
+  pricingModel             String    // SLAB, PER_KG
+  minimumWeight            Float     @default(0.0)
+  cargoThreshold           Float     @default(5.0)
+  active                   Boolean   @default(true)
+  useForComparison         Boolean   @default(true)
+  version                  Int       @default(1)
+  effectiveFrom            DateTime?
+  effectiveUntil           DateTime?
+  slabs                    Json      // Pricing structures array
+  regions                  Json?     // Custom regions classification
+  pincodes                 Json?     // Custom pincode mapping
+  internationalRates       Json?     // Country-specific rates & charges for Sea Freight and Air Freight
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([ownerType])
+  @@index([ownerId])
+  @@index([courierCompanyId])
+}
+
+model PincodeMapping {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  pincode         String   @unique
+  state           String
+  district        String?
+  city            String
+  postOffices     Json?    // Array of postal office names (string[])
+  postalCircle    String?
+  postalRegion    String?
+  postalDivision  String?
+  officeType      String?  // BO, SO, HO
+  deliveryStatus  String?  // Delivery, Non-Delivery
+  latitude        Float?
+  longitude       Float?
+
+  // GEO SAM Commercial Mappings & Settings
+  geoRegion       String   // commercial region (e.g. METRO, SOUTH, WEST, NORTH, EAST, NORTH EAST, ROI)
+  zone            String   // geographical zone (e.g. South, West, North, East, North East, ROI)
+  isMetro         Boolean  @default(false)
+  isServiceable   Boolean  @default(true)
+
+  // Custom Overrides status flag
+  hasOverride     Boolean  @default(false)
+  originalData    Json?    // Backup of original source details
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([state])
+  @@index([city])
+  @@index([geoRegion])
+  @@index([zone])
+}
+
+model CommercialRegion {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // e.g. METRO, SOUTH, WEST, NORTH, EAST, NORTH EAST, ROI
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model StateRegionMapping {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  state       String   @unique // e.g. Karnataka, Maharashtra
+  regionName  String   // e.g. SOUTH, WEST (references CommercialRegion name)
+  zoneName    String   // e.g. South, West
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MetroLocation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // City name, e.g. Bengaluru, Mumbai
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model QuotationTemplate {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @db.ObjectId
+  name             String
+  logo             String?  // Base64 or image URL
+  companyName      String
+  address          String
+  phone            String
+  email            String
+  gstNumber        String?
+  website          String?
+  footerText       String?
+  terms            String?
+  paymentTerms     String?
+  validityDays     Int      @default(30)
+  signatureText    String?
+  authorizedPerson String?
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Quotation {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String   @db.ObjectId
+  quotationNumber    String   @unique
+  customerName       String
+  customerCompany    String?
+  customerEmail      String?
+  customerPhone      String?
+  customerAddress    String?
+  originPincode      String
+  destinationPincode String
+  weight             Float
+  serviceType        String
+  rateCardName       String
+  pricingMode        String
+  chargeableWeight   Float
+  baseRate           Float
+  additionalCharges  Float    @default(0.0)
+  cargoRate          Float?
+  gstAmount          Float    @default(0.0)
+  totalAmount        Float
+  status             String   @default("ACTIVE") // ACTIVE, EXPIRED, SENT, ACCEPTED
+  validUntil         DateTime
+  rateSnapshot       Json
+  templateSnapshot   Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model PackagingProduct {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String
+  category    String   // e.g. Box, Wrap, Tape
+  price       Float?   // Nullable for Cotton Box which uses variants/dimensions
+  unit        String?  // piece, roll, etc.
+  minQuantity Int      @default(1)
+  stock       Int      @default(0)
+  image       String?  // Image file URL/path
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  variants    PackagingVariant[]
+  cartItems   PackagingCartItem[]
+  orderItems  PackagingOrderItem[]
+}
+
+model PackagingVariant {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String   @db.ObjectId
+  product       PackagingProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  length        Float
+  width         Float
+  height        Float
+  dimensionUnit String   // MM, CM, Inch, Feet etc.
+  price         Float
+  minQuantity   Int      @default(1)
+  stock         Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  cartItems     PackagingCartItem[]
+  orderItems    PackagingOrderItem[]
+}
+
+model PackagingCart {
+  id        String              @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String              @unique @db.ObjectId
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  items     PackagingCartItem[]
+}
+
+model PackagingCartItem {
+  id        String            @id @default(auto()) @map("_id") @db.ObjectId
+  cartId    String            @db.ObjectId
+  cart      PackagingCart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String            @db.ObjectId
+  product   PackagingProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?           @db.ObjectId
+  variant   PackagingVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quantity  Int
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model PackagingOrder {
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String          @db.ObjectId
+  orderNumber     String          @unique // e.g., ORD-PKG-10001
+  status          String          @default("PENDING_PAYMENT") // PENDING_PAYMENT, PAID, PROCESSING, PACKED, SHIPPED, DELIVERED, CANCELLED
+  baseAmount      Float
+  gstAmount       Float
+  shippingAmount  Float           @default(0)
+  totalAmount     Float
+  billingDetails  Json            // Address & details
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  items           PackagingOrderItem[]
+  payments        PackagingPayment[]
+  requirementId   String?         @db.ObjectId
+  requirement     CustomPackagingRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+}
+
+model PackagingOrderItem {
+  id          String            @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String            @db.ObjectId
+  order       PackagingOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String            @db.ObjectId
+  product     PackagingProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productName String
+  variantId   String?           @db.ObjectId
+  variant     PackagingVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantInfo String?
+  price       Float
+  quantity    Int
+  totalAmount Float
+}
+
+model PackagingPayment {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  orderId       String         @db.ObjectId
+  order         PackagingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId        String         @db.ObjectId
+  amount        Float
+  paymentMethod String         // UPI, BANK_TRANSFER
+  utr           String
+  screenshotUrl String?
+  status        String         @default("PENDING") // PENDING, PROCESSING, PAID, FAILED, CANCELLED, REFUNDED
+  adminNotes    String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model CustomPackagingRequirement {
+  id                     String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId                 String               @db.ObjectId
+  customerName           String
+  companyName            String
+  email                  String
+  phone                  String
+  productMaterial        String
+  requiredDimension      String?
+  requiredQuantity       Int
+  deliveryLocation       String
+  requiredDate           DateTime
+  additionalRequirements String?
+  attachmentUrl          String?
+  status                 String               @default("NEW") // NEW, UNDER_REVIEW, CLARIFICATION_REQUIRED, APPROVED_QUOTED, CUSTOMER_ACCEPTED, CUSTOMER_REJECTED, PAYMENT_PENDING, PAID, ORDER_CONFIRMED, CANCELLED
+  adminNotes             String?
+  clarificationQuestion  String?
+  clarificationAnswer    String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  quotations             PackagingQuotation[]
+  orders                 PackagingOrder[]
+}
+
+model PackagingQuotation {
+  id             String                     @id @default(auto()) @map("_id") @db.ObjectId
+  requirementId  String                     @db.ObjectId
+  requirement    CustomPackagingRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  userId         String                     @db.ObjectId
+  quotationNumber String                    @unique
+  unitPrice      Float
+  quantity       Int
+  subtotal       Float
+  shippingCharge Float                      @default(0)
+  taxAmount      Float                      @default(0)
+  discountAmount Float                      @default(0)
+  finalAmount    Float
+  validityDays   Int                        @default(30)
+  validUntil     DateTime
+  adminNotes     String?
+  status         String                     @default("SENT") // SENT, ACCEPTED, REJECTED, EXPIRED
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+}
+
+model SalesFollowUp {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String   @db.ObjectId
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  quotationId        String?  @db.ObjectId
+  quotationNumber    String?
+
+  date               DateTime @default(now())
+  companyName        String
+  contactPerson      String
+  phone              String
+  email              String?
+  salesLeadSource    String?  // BACKEND SALES LEAD, RETAIL VISIT CUSTOMER, MARKETING, SUGGESTED BY CUSTOMER, JD/IM, ONLINE ENQUIRY
+  furtherAction      String   @default("QTN SENT & FOLLOWUP PENDING")
+  remarks            String?
+  businessArea       String?  // Location/City/Area
+
+  // Details snapshot from Quotation or manual input
+  courierCompany     String?
+  serviceName        String?
+  serviceType        String?  // Domestic, International
+  shippingMode       String?
+  originPincode      String?
+  destinationPincode String?
+  originCity         String?
+  destinationCity    String?
+  destinationRegion  String?
+  actualWeight       Float?
+  volumetricWeight   Float?
+  chargeableWeight   Float?
+  calculatedRate     Float?
+  pricingModel       String?
+
+  isManualEntry      Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  history            SalesFollowUpHistory[]
+
+  @@index([userId])
+  @@index([quotationId])
+  @@index([quotationNumber])
+  @@index([furtherAction])
+  @@index([salesLeadSource])
+  @@index([createdAt])
+}
+
+model SalesFollowUpHistory {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  followUpId      String         @db.ObjectId
+  followUp        SalesFollowUp  @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+  action          String         // e.g. "Quotation generated", "Further Action updated", "Remarks updated"
+  previousState   String?
+  newState        String?
+  timestamp       DateTime       @default(now())
+  
+  @@index([followUpId])
+}
+
+model UserLicensePricing {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  duration  Int      @unique // 3, 6, 12 months
+  price     Float    // Admin configured price
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserLicense {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?      @db.ObjectId
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  employeeId     String?      @db.ObjectId
+  
+  userName       String
+  userMobile     String
+  userEmail      String
+  designation    String?      @default("Employee")
+  department     String?      @default("General")
+
+  duration       Int          // 3, 6, 12 months
+  price          Float        // Price locked in at time of purchase
+  
+  startDate      DateTime?
+  expiryDate     DateTime?    // startDate + duration months
+  
+  paymentStatus  String       @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED
+  status         String       @default("PENDING_PAYMENT") // PENDING_PAYMENT, ACTIVE, EXPIRED, INACTIVE
+  
+  paymentMethod  String?      // UPI, BANK_TRANSFER
+  utr            String?
+  screenshotUrl  String?
+  adminNotes     String?
+  billingDetails Json?
+  roleId         String?      @db.ObjectId
+  roleName       String?
+  assignedModules String[]    @default([])
+  modulePricingSnapshot Json?
+  initialPasswordHash String?
+  paymentType    String       @default("USER_LICENSE")
+  purchaseId     String?      @db.ObjectId
+  purchase       UserLicensePurchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([expiryDate])
+  @@index([paymentStatus])
+  @@index([purchaseId])
+}
+
+model UserLicensePurchase {
+  id                 String        @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId     String        @db.ObjectId
+  organization       Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  usersCount         Int           // Number of users purchased
+  durationSelected   Int           // 3, 6, 12 months
+  actualDurationDays Int           // Actual duration in days
+  pricePerUser       Float         // Price per user
+  totalAmount        Float         // usersCount * pricePerUser
+  paymentMethod      String        // UPI, BANK_TRANSFER
+  utr                String        // Transaction reference / UTR
+  screenshotUrl      String?
+  billingDetails     Json?
+  adminNotes         String?
+  startDate          DateTime?
+  expiryDate         DateTime?     // Capped at organization subscription expiry
+  paymentStatus      String        @default("PENDING") // PENDING, APPROVED, REJECTED
+  status             String        @default("PENDING_PAYMENT") // PENDING_PAYMENT, ACTIVE, EXPIRED
+  isProrated         Boolean       @default(false)
+  paymentType        String        @default("USER_LICENSE")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  userLicenses       UserLicense[]
+
+  @@index([organizationId])
+  @@index([paymentStatus])
+  @@index([status])
+  @@index([expiryDate])
+  @@index([utr])
+}
+
+model PlatformModule {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  key          String   @unique
+  name         String
+  description  String?
+  category     String   // LOGISTICS, ORGANIZATION, SHOPPING
+  monthlyPrice Float    @default(0.0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PlatformRole {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  moduleKeys  String[] @default([])
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+

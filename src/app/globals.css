@@ -1,0 +1,355 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc; /* Premium soft off-white page background */
+  --foreground: #0f172a; /* High contrast dark charcoal typography */
+  --primary-deep: #0f4c3a; /* Deep forest green */
+  --primary-bright: #107c5a; /* Vibrant emerald accent */
+  --primary-light: #e8f5e9; /* Light green highlight tint */
+  --charcoal: #0f172a;
+  --card-bg: #ffffff;
+  --border-color: #e2e8f0; /* Crisp 1px slate border */
+}
+
+@theme {
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-bright: var(--primary-bright);
+  --color-primary-light: var(--primary-light);
+  --color-charcoal: var(--charcoal);
+  --color-card-bg: var(--card-bg);
+  --color-border-custom: var(--border-color);
+  
+  /* Consistent border radius system */
+  --radius-3xl: 16px;
+  --radius-2xl: 12px;
+  --radius-xl: 10px;
+  --radius-lg: 8px;
+  --radius-md: 6px;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar for premium feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* High contrast accessible input states */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+select,
+textarea {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #0f172a;
+  font-weight: 600;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--primary-bright);
+  box-shadow: 0 0 0 3px rgba(16, 124, 90, 0.2), 0 1px 3px 0 rgba(0, 0, 0, 0.08);
+  outline: none;
+  background-color: #ffffff;
+}
+
+/* Accessible focus rings for keyboard navigation */
+:focus-visible {
+  outline: 2.5px solid var(--primary-bright) !important;
+  outline-offset: 2px !important;
+}
+
+/* Premium High-Contrast Table Styles */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+thead th {
+  background-color: #f1f5f9 !important;
+  color: #1e293b !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.06em !important;
+  border-bottom: 2px solid #cbd5e1 !important;
+  padding: 11px 16px !important;
+  text-transform: uppercase !important;
+}
+
+tbody td {
+  padding: 13px 16px !important;
+  font-size: 13px !important;
+  color: #0f172a !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+tbody tr:hover td {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+/* Animation utilities */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes stepPulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(16, 124, 90, 0.3); }
+  50% { border-color: rgba(16, 124, 90, 0.8); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-up {
+  animation: slideUpFade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-step-pulse {
+  animation: stepPulse 1.5s ease-in-out infinite;
+}
+
+.hover-lift {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+}
+
+.card-border-glow {
+  animation: borderGlow 2s ease-in-out infinite;
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Transition standardization */
+button, Link, a {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Master Hover & Micro-Interaction Utility System */
+
+.geo-transition {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Card hover lift & shadow elevation */
+.geo-card {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1), border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, box-shadow;
+}
+
+.geo-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.07), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  border-color: rgba(16, 124, 90, 0.3);
+}
+
+/* Primary button hover styling */
+.geo-btn-primary {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  will-change: transform, background-color, box-shadow;
+}
+
+.geo-btn-primary:hover {
+  background-color: #0c3c2e !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(14, 56, 44, 0.25);
+}
+
+.geo-btn-primary:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 4px rgba(14, 56, 44, 0.2);
+}
+
+/* Secondary button hover styling */
+.geo-btn-secondary {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.geo-btn-secondary:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  transform: translateY(-1px);
+}
+
+.geo-btn-secondary:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Interactive Action Icons */
+.geo-action-icon {
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 8px;
+}
+
+.geo-action-icon:hover {
+  transform: scale(1.06);
+}
+
+.geo-action-icon:active {
+  transform: scale(0.95);
+}
+
+/* Specific Action Icon Types */
+.geo-action-edit:hover {
+  background-color: #fef3c7 !important;
+  color: #d97706 !important;
+  border-color: #fde68a !important;
+}
+
+.geo-action-delete:hover {
+  background-color: #ffe4e6 !important;
+  color: #e11d48 !important;
+  border-color: #fecdd3 !important;
+}
+
+.geo-action-download:hover {
+  background-color: #e8f5e9 !important;
+  color: #0f4c3a !important;
+  border-color: #a7f3d0 !important;
+}
+
+.geo-action-share:hover {
+  background-color: #dbeafe !important;
+  color: #2563eb !important;
+  border-color: #bfdbfe !important;
+}
+
+.geo-action-view:hover {
+  background-color: #ccfbf1 !important;
+  color: #0d9488 !important;
+  border-color: #99f6e4 !important;
+}
+
+/* Table Row Hover */
+tbody tr {
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+tbody tr:hover {
+  background-color: rgba(240, 247, 244, 0.7) !important;
+}
+
+/* Input & Form Control Hover / Focus Glow */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+select,
+textarea {
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="password"]:hover,
+input[type="email"]:hover,
+select:hover,
+textarea:hover {
+  border-color: #cbd5e1;
+  background-color: #ffffff;
+}
+
+/* Navigation items hover */
+.geo-nav-item {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.geo-nav-item:hover {
+  background-color: rgba(16, 124, 90, 0.08);
+  color: #0f4c3a;
+  transform: translateX(2px);
+}
+
+/* Product Card Image Zoom */
+.geo-product-card {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1), border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.geo-product-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.1);
+  border-color: rgba(16, 124, 90, 0.3);
+}
+
+.geo-product-card:hover .geo-product-image {
+  transform: scale(1.04);
+}
+
+.geo-product-image {
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Tab & Segmented Control Hover */
+.geo-tab-button {
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.geo-tab-button:hover:not(.active) {
+  background-color: #f1f5f9;
+  color: #0f4c3a;
+}
+
