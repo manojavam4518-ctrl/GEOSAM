@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { exportWeightCalculationPDF, takeScreenshot } from '@/utils/exportUtils';
 import ShareMenuModal from '@/components/ShareMenuModal';
 import {
@@ -17,7 +17,19 @@ import {
   Loader2,
   Sun,
   Moon,
+  Package,
+  ChevronRight,
+  RotateCcw,
+  Info,
+  CheckCircle2,
+  PlusCircle,
 } from 'lucide-react';
+
+interface CustomDivisorMode {
+  id: string;
+  name: string;
+  divisor: number;
+}
 
 interface PackageItem {
   length: string;
@@ -25,6 +37,10 @@ interface PackageItem {
   height: string;
   actualWeight: string;
   quantity: string;
+  multiplier?: string;
+  lengthUnit?: 'MM' | 'CM' | 'Inch' | 'Feet';
+  widthUnit?: 'MM' | 'CM' | 'Inch' | 'Feet';
+  heightUnit?: 'MM' | 'CM' | 'Inch' | 'Feet';
 }
 
 function getUnitReadableName(unit: 'MM' | 'CM' | 'Inch' | 'Feet', value: number): string {
@@ -49,8 +65,9 @@ function CalculatorContent() {
   const [converterExpanded, setConverterExpanded] = useState(true);
 
   // Unit Converter State
-  const [convFrom, setConvFrom] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('Feet');
-  const [convTo, setConvTo] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('Feet');
+  const [selectedUnit, setSelectedUnit] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
+  const [convFrom, setConvFrom] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
+  const [convTo, setConvTo] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [convValue, setConvValue] = useState('10');
   const [convResult, setConvResult] = useState<number | null>(10);
 
@@ -59,9 +76,17 @@ function CalculatorContent() {
   const [lengthUnit, setLengthUnit] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [widthUnit, setWidthUnit] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [heightUnit, setHeightUnit] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
-  const [divisorMode, setDivisorMode] = useState<'4000' | '4500' | '5000' | 'CUSTOM'>('4000');
+  const [divisorMode, setDivisorMode] = useState<string>('4000');
   const [customDivisor, setCustomDivisor] = useState('5000');
-  const [multiPackage, setMultiPackage] = useState(false);
+  const [multiPackage, setMultiPackage] = useState(true);
+
+  // User-defined Custom Divisor Modes State
+  const [divisorTab, setDivisorTab] = useState<'DEFAULT' | 'CUSTOM'>('DEFAULT');
+  const [selectedCustomModeId, setSelectedCustomModeId] = useState<string | null>(null);
+  const [userModes, setUserModes] = useState<CustomDivisorMode[]>([]);
+  const [newModeName, setNewModeName] = useState('');
+  const [newModeDivisor, setNewModeDivisor] = useState('');
+  const [customModeError, setCustomModeError] = useState('');
   
   // Package Inputs
   const [singlePkg, setSinglePkg] = useState<PackageItem>({
@@ -70,10 +95,13 @@ function CalculatorContent() {
     height: '0',
     actualWeight: '',
     quantity: '1',
+    lengthUnit: 'CM',
+    widthUnit: 'CM',
+    heightUnit: 'CM',
   });
   
   const [packages, setPackages] = useState<PackageItem[]>([
-    { length: '0', width: '0', height: '0', actualWeight: '', quantity: '1' }
+    { length: '0', width: '0', height: '0', actualWeight: '', quantity: '1', multiplier: '1', lengthUnit: 'CM', widthUnit: 'CM', heightUnit: 'CM' }
   ]);
 
   // Results & Sharing State
@@ -82,8 +110,26 @@ function CalculatorContent() {
   const [error, setError] = useState('');
   const [demoState, setDemoState] = useState<any>(null);
 
+  // Package Breakdown Collapse State
+  const [breakdownExpanded, setBreakdownExpanded] = useState(true);
+
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePdfData, setSharePdfData] = useState<{ blob: Blob | null; filename: string } | null>(null);
+
+  // Load saved custom divisor modes from localStorage
+  useEffect(() => {
+    try {
+      const savedModes = localStorage.getItem('geo_user_divisor_modes');
+      if (savedModes) {
+        const parsed = JSON.parse(savedModes);
+        if (Array.isArray(parsed)) {
+          setUserModes(parsed);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load custom divisor modes from localStorage', err);
+    }
+  }, []);
 
   // Load theme preference
   useEffect(() => {
@@ -151,6 +197,87 @@ function CalculatorContent() {
     return parseFloat(finalVal.toFixed(2));
   }
 
+  // Active Divisor Value Resolution
+  const activeDivisor = useMemo(() => {
+    if (divisorMode === '4000') return 4000;
+    if (divisorMode === '4500') return 4500;
+    if (divisorMode === '5000') return 5000;
+    if (divisorMode === 'CUSTOM') return parseFloat(customDivisor) || 5000;
+    const userMode = userModes.find(m => m.id === divisorMode);
+    if (userMode) return userMode.divisor;
+    return 4000;
+  }, [divisorMode, customDivisor, userModes]);
+
+  // Dynamic Real-time Package Breakdown Evaluation
+  const packageBreakdown = useMemo(() => {
+    const currentDivisor = activeDivisor;
+    const sourcePackages = multiPackage ? packages : [singlePkg];
+
+    return sourcePackages.map((p, idx) => {
+      const len = parseFloat(p.length) || 0;
+      const wid = parseFloat(p.width) || 0;
+      const hei = parseFloat(p.height) || 0;
+      const act = parseFloat(p.actualWeight) || 0;
+      const qty = parseInt(p.quantity) || 1;
+      const mult = parseInt(p.multiplier || '1') || 1;
+      const effectiveQty = Math.max(1, qty) * Math.max(1, mult);
+
+      const pLenUnit = p.lengthUnit || lengthUnit || 'CM';
+      const pWidUnit = p.widthUnit || widthUnit || 'CM';
+      const pHeiUnit = p.heightUnit || heightUnit || 'CM';
+
+      const lenCm = convertUnits(len, pLenUnit, 'CM');
+      const widCm = convertUnits(wid, pWidUnit, 'CM');
+      const heiCm = convertUnits(hei, pHeiUnit, 'CM');
+
+      const volumetricWeight = currentDivisor > 0 ? ((lenCm * widCm * heiCm) / currentDivisor) * effectiveQty : 0;
+      const actualWeightTotal = act * effectiveQty;
+      const chargeableWeight = Math.max(actualWeightTotal, volumetricWeight);
+
+      const isActualHigher = actualWeightTotal > volumetricWeight;
+      const isVolumetricHigher = volumetricWeight > actualWeightTotal;
+      const isTie = Math.abs(actualWeightTotal - volumetricWeight) < 0.0001;
+
+      return {
+        index: idx + 1,
+        actualWeight: actualWeightTotal,
+        volumetricWeight: volumetricWeight,
+        chargeableWeight: chargeableWeight,
+        isActualHigher,
+        isVolumetricHigher,
+        isTie,
+      };
+    });
+  }, [multiPackage, packages, singlePkg, lengthUnit, widthUnit, heightUnit, activeDivisor]);
+
+  // Dynamic Real-time Auto-sums across all packages
+  const totalActualWeight = useMemo(() => {
+    return packageBreakdown.reduce((sum, item) => sum + item.actualWeight, 0);
+  }, [packageBreakdown]);
+
+  const totalVolumetricWeight = useMemo(() => {
+    return packageBreakdown.reduce((sum, item) => sum + item.volumetricWeight, 0);
+  }, [packageBreakdown]);
+
+  // Final Chargeable Weight = MAX(Total Actual Weight, Total Volumetric Weight)
+  const totalChargeableWeight = useMemo(() => {
+    return Math.max(totalActualWeight, totalVolumetricWeight);
+  }, [totalActualWeight, totalVolumetricWeight]);
+
+  // Active calculation report values that dynamically reflect MAX(Total Actual Weight, Total Volumetric Weight)
+  const currentCalculationResult = useMemo(() => {
+    if (!result) return null;
+    const finalActual = totalActualWeight > 0 ? parseFloat(totalActualWeight.toFixed(3)) : (parseFloat(result.actualWeight) || 0);
+    const finalVolumetric = totalVolumetricWeight > 0 ? parseFloat(totalVolumetricWeight.toFixed(3)) : (parseFloat(result.volumetricWeight) || 0);
+    const finalChargeable = Math.max(finalActual, finalVolumetric);
+    return {
+      ...result,
+      actualWeight: finalActual,
+      volumetricWeight: finalVolumetric,
+      chargeableWeight: finalChargeable,
+    };
+  }, [result, totalActualWeight, totalVolumetricWeight]);
+
   // Run Unit Converter calculation automatically
   useEffect(() => {
     const val = parseFloat(convValue);
@@ -161,6 +288,20 @@ function CalculatorContent() {
     const converted = convertUnits(val, convFrom, convTo);
     setConvResult(converted);
   }, [convValue, convFrom, convTo]);
+
+  // Radio button unit selection handler
+  const handleUnitRadioChange = (unit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
+    setSelectedUnit(unit);
+    setConvFrom(unit);
+    setConvTo(unit);
+  };
+
+  // Sync selected radio unit if user updates dropdowns to matching units
+  useEffect(() => {
+    if (convFrom === convTo) {
+      setSelectedUnit(convFrom);
+    }
+  }, [convFrom, convTo]);
 
   // Apply converted result to calculator dimensions
   function handleApplyToCalculator(targetField: 'length' | 'width' | 'height') {
@@ -185,88 +326,88 @@ function CalculatorContent() {
     }
   }
 
-  // Unit change handlers for Length, Width, and Height
+  // Unit change handlers for Length, Width, and Height (Single Package)
   const handleLengthUnitChange = (newUnit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
-    if (multiPackage) {
-      setPackages(prev => prev.map(p => {
-        const val = parseFloat(p.length);
-        return {
-          ...p,
-          length: !isNaN(val) && val > 0 ? convertUnits(val, lengthUnit, newUnit).toString() : p.length
-        };
-      }));
-    } else {
-      const val = parseFloat(singlePkg.length);
-      if (!isNaN(val) && val > 0) {
-        const converted = convertUnits(val, lengthUnit, newUnit);
-        setSinglePkg(prev => ({ ...prev, length: converted.toString() }));
-      }
-    }
+    const val = parseFloat(singlePkg.length);
+    const oldUnit = singlePkg.lengthUnit || lengthUnit || 'CM';
+    const converted = !isNaN(val) && val > 0 ? convertUnits(val, oldUnit, newUnit).toString() : singlePkg.length;
+    setSinglePkg(prev => ({ ...prev, length: converted, lengthUnit: newUnit }));
     setLengthUnit(newUnit);
   };
 
   const handleWidthUnitChange = (newUnit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
-    if (multiPackage) {
-      setPackages(prev => prev.map(p => {
-        const val = parseFloat(p.width);
-        return {
-          ...p,
-          width: !isNaN(val) && val > 0 ? convertUnits(val, widthUnit, newUnit).toString() : p.width
-        };
-      }));
-    } else {
-      const val = parseFloat(singlePkg.width);
-      if (!isNaN(val) && val > 0) {
-        const converted = convertUnits(val, widthUnit, newUnit);
-        setSinglePkg(prev => ({ ...prev, width: converted.toString() }));
-      }
-    }
+    const val = parseFloat(singlePkg.width);
+    const oldUnit = singlePkg.widthUnit || widthUnit || 'CM';
+    const converted = !isNaN(val) && val > 0 ? convertUnits(val, oldUnit, newUnit).toString() : singlePkg.width;
+    setSinglePkg(prev => ({ ...prev, width: converted, widthUnit: newUnit }));
     setWidthUnit(newUnit);
   };
 
   const handleHeightUnitChange = (newUnit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
-    if (multiPackage) {
-      setPackages(prev => prev.map(p => {
-        const val = parseFloat(p.height);
-        return {
-          ...p,
-          height: !isNaN(val) && val > 0 ? convertUnits(val, heightUnit, newUnit).toString() : p.height
-        };
-      }));
-    } else {
-      const val = parseFloat(singlePkg.height);
-      if (!isNaN(val) && val > 0) {
-        const converted = convertUnits(val, heightUnit, newUnit);
-        setSinglePkg(prev => ({ ...prev, height: converted.toString() }));
-      }
-    }
+    const val = parseFloat(singlePkg.height);
+    const oldUnit = singlePkg.heightUnit || heightUnit || 'CM';
+    const converted = !isNaN(val) && val > 0 ? convertUnits(val, oldUnit, newUnit).toString() : singlePkg.height;
+    setSinglePkg(prev => ({ ...prev, height: converted, heightUnit: newUnit }));
     setHeightUnit(newUnit);
   };
 
+  // Individual package dimension unit change handler
+  const handlePackageUnitChange = (pkgIdx: number, dim: 'length' | 'width' | 'height', newUnit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
+    setPackages(prev => prev.map((p, idx) => {
+      if (idx !== pkgIdx) return p;
+      const unitKey = `${dim}Unit` as 'lengthUnit' | 'widthUnit' | 'heightUnit';
+      const oldUnit = p[unitKey] || 'CM';
+      if (oldUnit === newUnit) return p;
+      const val = parseFloat(p[dim]);
+      const convertedVal = (!isNaN(val) && val > 0)
+        ? convertUnits(val, oldUnit, newUnit).toString()
+        : p[dim];
+      return {
+        ...p,
+        [dim]: convertedVal,
+        [unitKey]: newUnit,
+      };
+    }));
+  };
+
   const handleApplyUnitToAll = (targetUnit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
-    if (multiPackage) {
-      setPackages(prev => prev.map(p => {
-        const lenVal = parseFloat(p.length);
-        const widVal = parseFloat(p.width);
-        const heiVal = parseFloat(p.height);
-        return {
-          ...p,
-          length: !isNaN(lenVal) && lenVal > 0 ? convertUnits(lenVal, lengthUnit, targetUnit).toString() : p.length,
-          width: !isNaN(widVal) && widVal > 0 ? convertUnits(widVal, widthUnit, targetUnit).toString() : p.width,
-          height: !isNaN(heiVal) && heiVal > 0 ? convertUnits(heiVal, heightUnit, targetUnit).toString() : p.height
-        };
-      }));
-    } else {
-      const lenVal = parseFloat(singlePkg.length);
-      const widVal = parseFloat(singlePkg.width);
-      const heiVal = parseFloat(singlePkg.height);
-      setSinglePkg(prev => ({
-        ...prev,
-        length: !isNaN(lenVal) && lenVal > 0 ? convertUnits(lenVal, lengthUnit, targetUnit).toString() : prev.length,
-        width: !isNaN(widVal) && widVal > 0 ? convertUnits(widVal, widthUnit, targetUnit).toString() : prev.width,
-        height: !isNaN(heiVal) && heiVal > 0 ? convertUnits(heiVal, heightUnit, targetUnit).toString() : prev.height
-      }));
-    }
+    setPackages(prev => prev.map(p => {
+      const lenUnit = p.lengthUnit || 'CM';
+      const widUnit = p.widthUnit || 'CM';
+      const heiUnit = p.heightUnit || 'CM';
+
+      const lenVal = parseFloat(p.length);
+      const widVal = parseFloat(p.width);
+      const heiVal = parseFloat(p.height);
+
+      return {
+        ...p,
+        length: !isNaN(lenVal) && lenVal > 0 ? convertUnits(lenVal, lenUnit, targetUnit).toString() : p.length,
+        width: !isNaN(widVal) && widVal > 0 ? convertUnits(widVal, widUnit, targetUnit).toString() : p.width,
+        height: !isNaN(heiVal) && heiVal > 0 ? convertUnits(heiVal, heiUnit, targetUnit).toString() : p.height,
+        lengthUnit: targetUnit,
+        widthUnit: targetUnit,
+        heightUnit: targetUnit,
+      };
+    }));
+
+    const singleLenUnit = singlePkg.lengthUnit || 'CM';
+    const singleWidUnit = singlePkg.widthUnit || 'CM';
+    const singleHeiUnit = singlePkg.heightUnit || 'CM';
+    const sLen = parseFloat(singlePkg.length);
+    const sWid = parseFloat(singlePkg.width);
+    const sHei = parseFloat(singlePkg.height);
+
+    setSinglePkg(prev => ({
+      ...prev,
+      length: !isNaN(sLen) && sLen > 0 ? convertUnits(sLen, singleLenUnit, targetUnit).toString() : prev.length,
+      width: !isNaN(sWid) && sWid > 0 ? convertUnits(sWid, singleWidUnit, targetUnit).toString() : prev.width,
+      height: !isNaN(sHei) && sHei > 0 ? convertUnits(sHei, singleHeiUnit, targetUnit).toString() : prev.height,
+      lengthUnit: targetUnit,
+      widthUnit: targetUnit,
+      heightUnit: targetUnit,
+    }));
+
     setLengthUnit(targetUnit);
     setWidthUnit(targetUnit);
     setHeightUnit(targetUnit);
@@ -282,6 +423,7 @@ function CalculatorContent() {
           height: singlePkg.height,
           actualWeight: singlePkg.actualWeight,
           quantity: singlePkg.quantity || '1',
+          multiplier: '1',
         }]);
       }
     } else {
@@ -299,7 +441,20 @@ function CalculatorContent() {
 
   // Multi-package handlers
   function addPackage() {
-    setPackages(prev => [...prev, { length: '0', width: '0', height: '0', actualWeight: '', quantity: '1' }]);
+    setPackages(prev => [
+      ...prev,
+      {
+        length: '0',
+        width: '0',
+        height: '0',
+        actualWeight: '',
+        quantity: '1',
+        multiplier: '1',
+        lengthUnit: 'CM',
+        widthUnit: 'CM',
+        heightUnit: 'CM',
+      }
+    ]);
   }
 
   function removePackage(index: number) {
@@ -307,11 +462,156 @@ function CalculatorContent() {
     setPackages(prev => prev.filter((_, idx) => idx !== index));
   }
 
+  function resetPackage(index: number) {
+    setPackages(prev => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = {
+          length: '0',
+          width: '0',
+          height: '0',
+          actualWeight: '',
+          quantity: '1',
+          multiplier: '1',
+          lengthUnit: 'CM',
+          widthUnit: 'CM',
+          heightUnit: 'CM',
+        };
+      }
+      return updated;
+    });
+  }
+
   function updatePackageField(index: number, field: keyof PackageItem, value: string) {
     const updated = [...packages];
-    updated[index][field] = value;
+    (updated[index] as any)[field] = value;
     setPackages(updated);
   }
+
+  const handleSingleDimensionFocus = (field: 'length' | 'width' | 'height') => {
+    setSinglePkg(prev => {
+      if (prev[field] === '0' || prev[field] === '0.0' || prev[field] === '0.00') {
+        return { ...prev, [field]: '' };
+      }
+      return prev;
+    });
+  };
+
+  const handlePackageDimensionFocus = (index: number, field: 'length' | 'width' | 'height') => {
+    setPackages(prev => {
+      const val = prev[index]?.[field];
+      if (val === '0' || val === '0.0' || val === '0.00') {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], [field]: '' };
+        return updated;
+      }
+      return prev;
+    });
+  };
+
+  // Reset Package Entries Handler
+  const handleResetPackages = () => {
+    setSinglePkg({
+      length: '0',
+      width: '0',
+      height: '0',
+      actualWeight: '',
+      quantity: '1',
+      lengthUnit: 'CM',
+      widthUnit: 'CM',
+      heightUnit: 'CM',
+    });
+    setPackages([
+      {
+        length: '0',
+        width: '0',
+        height: '0',
+        actualWeight: '',
+        quantity: '1',
+        multiplier: '1',
+        lengthUnit: 'CM',
+        widthUnit: 'CM',
+        heightUnit: 'CM',
+      }
+    ]);
+    setLengthUnit('CM');
+    setWidthUnit('CM');
+    setHeightUnit('CM');
+    setDivisorTab('DEFAULT');
+    setDivisorMode(serviceType === 'INTERNATIONAL' ? '4500' : '4000');
+    setResult(null);
+    setError('');
+  };
+
+  // Add Custom Divisor Mode Handler
+  const handleAddCustomMode = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setCustomModeError('');
+    const trimmedName = newModeName.trim();
+    const parsedVal = parseFloat(newModeDivisor);
+
+    if (!trimmedName) {
+      setCustomModeError('Mode Name cannot be empty.');
+      return;
+    }
+    if (isNaN(parsedVal) || parsedVal <= 0) {
+      setCustomModeError('Please enter a valid divisor value greater than zero.');
+      return;
+    }
+
+    const nameExists = userModes.some(m => m.name.toLowerCase() === trimmedName.toLowerCase());
+    if (nameExists) {
+      setCustomModeError(`A custom mode named "${trimmedName}" already exists.`);
+      return;
+    }
+
+    const predefinedNames = ['surface mode', 'air mode', 'air cargo', 'custom divisor'];
+    if (predefinedNames.includes(trimmedName.toLowerCase())) {
+      setCustomModeError(`"${trimmedName}" is a reserved system mode name.`);
+      return;
+    }
+
+    const newMode: CustomDivisorMode = {
+      id: `custom-mode-${Date.now()}`,
+      name: trimmedName,
+      divisor: parsedVal,
+    };
+
+    const updated = [...userModes, newMode];
+    setUserModes(updated);
+    try {
+      localStorage.setItem('geo_user_divisor_modes', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to save custom divisor modes to localStorage', err);
+    }
+
+    // Auto-select newly created mode
+    setDivisorMode(newMode.id);
+    setSelectedCustomModeId(newMode.id);
+    setNewModeName('');
+    setNewModeDivisor('');
+  };
+
+  // Remove User-Defined Mode Handler
+  const handleDeleteUserMode = (modeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = userModes.filter(m => m.id !== modeId);
+    setUserModes(updated);
+    try {
+      localStorage.setItem('geo_user_divisor_modes', JSON.stringify(updated));
+    } catch (err) {
+      console.error('Failed to save updated divisor modes', err);
+    }
+    if (divisorMode === modeId) {
+      if (updated.length > 0) {
+        setDivisorMode(updated[0].id);
+        setSelectedCustomModeId(updated[0].id);
+      } else {
+        setSelectedCustomModeId(null);
+        setDivisorMode(serviceType === 'INTERNATIONAL' ? '4500' : '4000');
+      }
+    }
+  };
 
   // Service Type switch handler
   const handleServiceTypeChange = (type: 'DOMESTIC' | 'INTERNATIONAL') => {
@@ -323,16 +623,204 @@ function CalculatorContent() {
     }
   };
 
+  // Package Data-Entry Keyboard Navigation Helper
+  const focusField = (id: string) => {
+    const el = document.getElementById(id) as HTMLInputElement | HTMLButtonElement | null;
+    if (el) {
+      el.focus();
+      if ('select' in el && typeof el.select === 'function') {
+        el.select();
+      }
+    }
+  };
+
+  // Multiple Packages Data-Entry TAB Sequence: Multiplier -> Actual Weight -> Length -> Width -> Height -> Qty -> Next Package
+  const handlePackageKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    pkgIndex: number,
+    field: 'multiplier' | 'actualWeight' | 'length' | 'width' | 'height' | 'quantity'
+  ) => {
+    if (e.key === 'Tab') {
+      if (!e.shiftKey) {
+        // Forward TAB navigation
+        e.preventDefault();
+        switch (field) {
+          case 'multiplier':
+            focusField(`pkg-${pkgIndex}-actualWeight`);
+            break;
+          case 'actualWeight':
+            focusField(`pkg-${pkgIndex}-length`);
+            break;
+          case 'length':
+            focusField(`pkg-${pkgIndex}-width`);
+            break;
+          case 'width':
+            focusField(`pkg-${pkgIndex}-height`);
+            break;
+          case 'height':
+            focusField(`pkg-${pkgIndex}-quantity`);
+            break;
+          case 'quantity':
+            if (pkgIndex + 1 < packages.length) {
+              focusField(`pkg-${pkgIndex + 1}-multiplier`);
+            } else {
+              focusField('bottom-add-package-btn');
+            }
+            break;
+        }
+      } else {
+        // Reverse TAB navigation (Shift + Tab)
+        switch (field) {
+          case 'quantity':
+            e.preventDefault();
+            focusField(`pkg-${pkgIndex}-height`);
+            break;
+          case 'height':
+            e.preventDefault();
+            focusField(`pkg-${pkgIndex}-width`);
+            break;
+          case 'width':
+            e.preventDefault();
+            focusField(`pkg-${pkgIndex}-length`);
+            break;
+          case 'length':
+            e.preventDefault();
+            focusField(`pkg-${pkgIndex}-actualWeight`);
+            break;
+          case 'actualWeight':
+            e.preventDefault();
+            focusField(`pkg-${pkgIndex}-multiplier`);
+            break;
+          case 'multiplier':
+            if (pkgIndex > 0) {
+              e.preventDefault();
+              focusField(`pkg-${pkgIndex - 1}-quantity`);
+            }
+            // If pkgIndex === 0, allow natural browser shift+tab to exit packages section upwards
+            break;
+        }
+      }
+    } else if (e.key === 'ArrowDown') {
+      // Allow keyboard user to dive down into the unit selector for Length, Width, or Height
+      if (field === 'length' || field === 'width' || field === 'height') {
+        const selectedRadio = document.querySelector<HTMLInputElement>(
+          `input[name="pkg-${pkgIndex}-${field}Unit"]:checked`
+        ) || document.querySelector<HTMLInputElement>(
+          `input[name="pkg-${pkgIndex}-${field}Unit"]`
+        );
+        if (selectedRadio) {
+          e.preventDefault();
+          selectedRadio.focus();
+        }
+      }
+    }
+  };
+
+  // Keyboard navigation when focused on a package unit selector radio button
+  const handleUnitRadioKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    pkgIndex: number,
+    dimension: 'length' | 'width' | 'height'
+  ) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (!e.shiftKey) {
+        // Forward Tab from unit radio proceeds immediately to the next dimension input
+        if (dimension === 'length') focusField(`pkg-${pkgIndex}-width`);
+        else if (dimension === 'width') focusField(`pkg-${pkgIndex}-height`);
+        else if (dimension === 'height') focusField(`pkg-${pkgIndex}-quantity`);
+      } else {
+        // Shift+Tab returns focus to its parent dimension input
+        focusField(`pkg-${pkgIndex}-${dimension}`);
+      }
+    } else if (e.key === 'Escape' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusField(`pkg-${pkgIndex}-${dimension}`);
+    }
+  };
+
+  // Single Package Data-Entry TAB Sequence: Actual Weight -> Length -> Width -> Height -> Compute
+  const handleSinglePackageKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    field: 'actualWeight' | 'length' | 'width' | 'height'
+  ) => {
+    if (e.key === 'Tab') {
+      if (!e.shiftKey) {
+        e.preventDefault();
+        switch (field) {
+          case 'actualWeight':
+            focusField('single-length');
+            break;
+          case 'length':
+            focusField('single-width');
+            break;
+          case 'width':
+            focusField('single-height');
+            break;
+          case 'height':
+            focusField('compute-volumetric-weight-btn');
+            break;
+        }
+      } else {
+        switch (field) {
+          case 'height':
+            e.preventDefault();
+            focusField('single-width');
+            break;
+          case 'width':
+            e.preventDefault();
+            focusField('single-length');
+            break;
+          case 'length':
+            e.preventDefault();
+            focusField('single-actualWeight');
+            break;
+        }
+      }
+    } else if (e.key === 'ArrowDown') {
+      if (field === 'length' || field === 'width' || field === 'height') {
+        const selectedRadio = document.querySelector<HTMLInputElement>(
+          `input[name="single${field.charAt(0).toUpperCase() + field.slice(1)}Unit"]:checked`
+        );
+        if (selectedRadio) {
+          e.preventDefault();
+          selectedRadio.focus();
+        }
+      }
+    }
+  };
+
+  const handleSingleUnitRadioKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    dimension: 'length' | 'width' | 'height'
+  ) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (!e.shiftKey) {
+        if (dimension === 'length') focusField('single-width');
+        else if (dimension === 'width') focusField('single-height');
+        else if (dimension === 'height') focusField('compute-volumetric-weight-btn');
+      } else {
+        focusField(`single-${dimension}`);
+      }
+    } else if (e.key === 'Escape' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusField(`single-${dimension}`);
+    }
+  };
+
   // Direct PDF Export (Immediate generation with company profile branding, NO intermediate configuration forms)
   const handleDirectPDFExport = async () => {
-    if (!result) return;
-    await exportWeightCalculationPDF(result, user, defaultTemplate);
+    const activeRes = currentCalculationResult || result;
+    if (!activeRes) return;
+    await exportWeightCalculationPDF(activeRes, user, defaultTemplate);
   };
 
   // Share action (Generates customer branded PDF and opens Share menu)
   const handleOpenShareModal = async () => {
-    if (!result) return;
-    const res = await exportWeightCalculationPDF(result, user, defaultTemplate);
+    const activeRes = currentCalculationResult || result;
+    if (!activeRes) return;
+    const res = await exportWeightCalculationPDF(activeRes, user, defaultTemplate);
     if (res) {
       setSharePdfData({ blob: res.blob, filename: res.filename });
       setShareModalOpen(true);
@@ -345,8 +833,7 @@ function CalculatorContent() {
     setError('');
     setResult(null);
 
-    const activeDivisor = divisorMode === 'CUSTOM' ? customDivisor : divisorMode;
-    const parsedDivisor = parseFloat(activeDivisor);
+    const parsedDivisor = activeDivisor;
 
     if (isNaN(parsedDivisor) || parsedDivisor <= 0) {
       setError('Please provide a valid custom divisor value.');
@@ -361,7 +848,9 @@ function CalculatorContent() {
         const wid = parseFloat(p.width);
         const hei = parseFloat(p.height);
         const act = parseFloat(p.actualWeight);
-        const qty = parseInt(p.quantity);
+        const qty = parseInt(p.quantity) || 1;
+        const mult = parseInt(p.multiplier || '1') || 1;
+        const effectiveQty = Math.max(1, qty) * Math.max(1, mult);
 
         if (isNaN(len) || len <= 0 || isNaN(wid) || wid <= 0 || isNaN(hei) || hei <= 0) {
           setError(`Package #${i + 1} has invalid or negative dimensions.`);
@@ -372,16 +861,20 @@ function CalculatorContent() {
           return;
         }
 
-        const lenCm = convertUnits(len, lengthUnit, 'CM');
-        const widCm = convertUnits(wid, widthUnit, 'CM');
-        const heiCm = convertUnits(hei, heightUnit, 'CM');
+        const pLenUnit = p.lengthUnit || 'CM';
+        const pWidUnit = p.widthUnit || 'CM';
+        const pHeiUnit = p.heightUnit || 'CM';
+
+        const lenCm = convertUnits(len, pLenUnit, 'CM');
+        const widCm = convertUnits(wid, pWidUnit, 'CM');
+        const heiCm = convertUnits(hei, pHeiUnit, 'CM');
 
         finalPackages.push({
           length: lenCm,
           width: widCm,
           height: heiCm,
           actualWeight: act,
-          quantity: qty || 1,
+          quantity: effectiveQty,
         });
       }
     } else {
@@ -456,7 +949,7 @@ function CalculatorContent() {
       <div className={`flex items-center justify-between flex-wrap gap-4 border-b pb-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
         <div>
           <h1 className={`text-2xl font-bold ${isDark ? 'text-emerald-400' : 'text-[#0F4C3A]'}`}>Weight Calculator</h1>
-          <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>SaaS volumetric cargo evaluation workspace</p>
+          <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Volumetric cargo evaluation workspace</p>
         </div>
 
         {user?.accessStatus === 'DEMO_ACTIVE' && (
@@ -485,27 +978,104 @@ function CalculatorContent() {
           <div className={`border rounded-2xl shadow-sm overflow-hidden ${
             isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
           }`}>
-            <button
-              onClick={() => setConverterExpanded(!converterExpanded)}
-              className={`w-full flex items-center justify-between p-5 border-b text-left transition cursor-pointer ${
-                isDark ? 'bg-[#182B25] border-[#264E41] hover:bg-[#1C322B]' : 'bg-[#F8FAFC] border-slate-200 hover:bg-slate-50/80'
+            {/* Header with Title, Unit Radio Panels, and Collapse Button */}
+            <div
+              className={`w-full flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-3.5 border-b text-left ${
+                isDark ? 'bg-[#182B25] border-[#264E41]' : 'bg-[#F8FAFC] border-slate-200'
               }`}
             >
-              <span className={`font-extrabold text-xs uppercase tracking-wider ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                Unit Converter
-              </span>
-              {converterExpanded ? (
-                <ChevronUp className={`w-4 h-4 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
-              ) : (
-                <ChevronDown className={`w-4 h-4 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setConverterExpanded(!converterExpanded)}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-85 transition"
+              >
+                <span className={`font-extrabold text-xs uppercase tracking-wider ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  Unit Converter
+                </span>
+              </button>
+
+              {/* Radio Button Unit Panels */}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" role="radiogroup" aria-label="Unit Converter Unit Selection">
+                {[
+                  { id: 'MM' as const, label: 'MM', full: 'Millimeters' },
+                  { id: 'CM' as const, label: 'CM', full: 'Centimeters' },
+                  { id: 'Inch' as const, label: 'INCH', full: 'Inches' },
+                  { id: 'Feet' as const, label: 'FEET', full: 'Feet' },
+                ].map((u) => {
+                  const isSelected = selectedUnit === u.id;
+                  return (
+                    <label
+                      key={u.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnitRadioChange(u.id);
+                      }}
+                      className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all ${
+                        isSelected
+                          ? isDark
+                            ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
+                            : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
+                          : isDark
+                            ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="unitConverterRadio"
+                        value={u.id}
+                        checked={isSelected}
+                        onChange={() => handleUnitRadioChange(u.id)}
+                        className="sr-only"
+                      />
+                      <span
+                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? isDark
+                              ? 'border-emerald-400 bg-[#103A2D]'
+                              : 'border-[#1E8262] bg-[#E8F5E9]'
+                            : isDark
+                              ? 'border-slate-500 bg-[#14231E]'
+                              : 'border-slate-300 bg-white'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {isSelected && (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
+                            }`}
+                          />
+                        )}
+                      </span>
+                      <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
+                      <span className={`text-[10px] font-bold hidden md:inline ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>— {u.full}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setConverterExpanded(!converterExpanded)}
+                className={`cursor-pointer p-1 rounded transition hover:opacity-75 ${
+                  isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'
+                }`}
+                aria-label={converterExpanded ? 'Collapse Unit Converter' : 'Expand Unit Converter'}
+              >
+                {converterExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+            </div>
 
             {converterExpanded && (
               <div className="p-5 space-y-5">
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                   <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Convert From</label>
+                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert From</label>
                     <select
                       value={convFrom}
                       onChange={(e) => setConvFrom(e.target.value as any)}
@@ -521,7 +1091,7 @@ function CalculatorContent() {
                   </div>
 
                   <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Value</label>
+                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Value</label>
                     <input
                       type="number"
                       value={convValue}
@@ -534,7 +1104,7 @@ function CalculatorContent() {
                   </div>
 
                   <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Convert To</label>
+                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert To</label>
                     <select
                       value={convTo}
                       onChange={(e) => setConvTo(e.target.value as any)}
@@ -550,7 +1120,7 @@ function CalculatorContent() {
                   </div>
 
                   <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Conversion Result</label>
+                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Conversion Result</label>
                     <div className={`w-full border rounded-lg text-xs p-2 font-bold select-all h-[34px] flex items-center justify-start px-3 ${
                       isDark ? 'bg-[#103A2D] border-emerald-700/60 text-emerald-300' : 'bg-[#E8F5E9] border-emerald-200 text-[#0F4C3A]'
                     }`}>
@@ -564,7 +1134,7 @@ function CalculatorContent() {
 
                 {/* Apply Buttons */}
                 <div className={`border-t pt-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <span className={`block text-[10px] font-extrabold uppercase tracking-wider mb-2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>
+                  <span className={`block text-[10px] font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
                     USE IN CALCULATOR:
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -666,133 +1236,725 @@ function CalculatorContent() {
               </div>
             </div>
 
-            {/* Actual Weight (Shown for single package mode) */}
-            {!multiPackage && (
-              <div className={`border p-5 rounded-2xl shadow-sm space-y-3 ${
-                isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
-              }`}>
-                <span className={`block text-xs font-extrabold uppercase tracking-wider ${
-                  isDark ? 'text-slate-200' : 'text-slate-800'
-                }`}>
-                  Actual Weight
-                </span>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="any"
-                    value={singlePkg.actualWeight}
-                    onChange={(e) => setSinglePkg({ ...singlePkg, actualWeight: e.target.value })}
-                    placeholder="Actual Weight (KG)"
-                    className={`w-full border rounded-lg pl-3 pr-10 py-3 text-sm focus:outline-none ${
-                      isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white'
-                    }`}
-                    required
-                  />
-                  <span className={`absolute right-3.5 top-3.5 text-xs font-bold ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                    KG
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Package Dimensions Card with integrated MULTIPLE PACKAGES toggle & Radio-based APPLY TO ALL */}
             <div className={`border p-5 rounded-2xl shadow-sm space-y-4 ${
               isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
             }`}>
-              <div className={`flex items-center justify-between border-b pb-3 flex-wrap gap-2 ${
+              {/* Header Row: PACKAGE DIMENSIONS (Left) + DIVISOR (Right) on the same line */}
+              <div className={`flex flex-col xl:flex-row xl:items-start gap-3.5 xl:gap-4 border-b pb-4 w-full ${
                 isDark ? 'border-slate-800' : 'border-slate-100'
               }`}>
-                <div>
-                  <span className={`block text-xs font-extrabold uppercase tracking-wider ${
-                    isDark ? 'text-slate-200' : 'text-slate-800'
+                {/* LEFT SIDE: Package Dimensions Title & Subtitle with Icon (Compact to maximize space for Divisor) */}
+                <div className="flex items-center gap-2.5 pr-3 xl:pr-3.5 border-b xl:border-b-0 xl:border-r border-slate-200 dark:border-slate-800 shrink-0 pb-3 xl:pb-0">
+                  <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-xs shrink-0 ${
+                    isDark ? 'bg-[#103A2D] text-emerald-300 border border-emerald-500/40' : 'bg-[#0e2c22] text-white'
                   }`}>
-                    Package Dimensions
-                  </span>
+                    <Package className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div className="shrink-0">
+                    <h2 className={`text-xs sm:text-sm font-black tracking-tight uppercase ${
+                      isDark ? 'text-white' : 'text-[#0e2c22]'
+                    }`}>
+                      Package Dimensions
+                    </h2>
+                    <p className={`text-[10px] sm:text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>
+                      Enter the details of your package(s)
+                    </p>
+                  </div>
                 </div>
 
-                <div className={`flex items-center gap-3 px-3 py-1.5 rounded-xl border ${
-                  isDark ? 'bg-[#182B25] border-[#264E41]' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  <span className={`text-[11px] font-bold uppercase tracking-wider ${
-                    isDark ? 'text-slate-300' : 'text-slate-700'
-                  }`}>
-                    Multiple Packages
-                  </span>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={multiPackage}
-                      onChange={(e) => handleToggleMultiPackage(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-slate-400 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#107c5a]"></div>
-                  </label>
+                {/* RIGHT SIDE: Divisor Section (Expands to utilize available horizontal space) */}
+                <div className="flex-1 min-w-0 w-full space-y-3">
+                  {/* Divisor Section Header */}
+                  <div className="flex items-center gap-2">
+                    <Calculator className={`w-4 h-4 shrink-0 ${isDark ? 'text-emerald-400' : 'text-blue-600'}`} />
+                    <span className={`text-xs font-black uppercase tracking-wider ${
+                      isDark ? 'text-slate-200' : 'text-slate-800'
+                    }`}>
+                      DIVISOR
+                    </span>
+                    <span
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-help"
+                      title="Volumetric weight divisor: (L × W × H) ÷ Divisor"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </span>
+                    <span className={`text-[10px] sm:text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'} ml-1 hidden sm:inline`}>
+                      Select from existing modes or add a custom mode
+                    </span>
+                  </div>
+
+                  {/* Mode Selection UI: GO WITH EXISTING (DEFAULT) vs ADD CUSTOM MODE */}
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    {/* Option 1: GO WITH EXISTING (DEFAULT) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDivisorTab('DEFAULT');
+                        if (userModes.some(m => m.id === divisorMode)) {
+                          setDivisorMode(serviceType === 'INTERNATIONAL' ? '4500' : '4000');
+                        }
+                      }}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider transition cursor-pointer shadow-2xs border ${
+                        divisorTab === 'DEFAULT'
+                          ? isDark
+                            ? 'bg-[#103A2D] text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/30'
+                            : 'bg-[#E8F5E9] text-[#0F4C3A] border-[#1E8262]/40 ring-1 ring-[#1E8262]/20'
+                          : isDark
+                            ? 'bg-[#182B25] text-slate-400 border-[#264E41] hover:text-slate-200 hover:bg-[#1E362E]'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                        divisorTab === 'DEFAULT'
+                          ? isDark ? 'border-emerald-400 bg-emerald-400/20' : 'border-[#0F4C3A] bg-emerald-100'
+                          : isDark ? 'border-slate-500' : 'border-slate-300'
+                      }`}>
+                        {divisorTab === 'DEFAULT' && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'}`} />
+                        )}
+                      </span>
+                      <span>GO WITH EXISTING (DEFAULT)</span>
+                    </button>
+
+                    {/* Option 2: ADD CUSTOM MODE */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDivisorTab('CUSTOM');
+                        if (userModes.length > 0 && !userModes.some(m => m.id === divisorMode)) {
+                          const targetId = (selectedCustomModeId && userModes.some(m => m.id === selectedCustomModeId))
+                            ? selectedCustomModeId
+                            : userModes[0].id;
+                          setDivisorMode(targetId);
+                          setSelectedCustomModeId(targetId);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider transition cursor-pointer shadow-2xs border ${
+                        divisorTab === 'CUSTOM'
+                          ? isDark
+                            ? 'bg-[#132838] text-blue-300 border-blue-500/50 ring-1 ring-blue-500/30'
+                            : 'bg-blue-50 text-blue-800 border-blue-300 ring-1 ring-blue-400/30'
+                          : isDark
+                            ? 'bg-[#182B25] text-slate-400 border-[#264E41] hover:text-slate-200 hover:bg-[#1E362E]'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:text-slate-900 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                        divisorTab === 'CUSTOM'
+                          ? isDark ? 'border-blue-400 bg-blue-400/20' : 'border-blue-700 bg-blue-100'
+                          : isDark ? 'border-slate-500' : 'border-slate-300'
+                      }`}>
+                        {divisorTab === 'CUSTOM' && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isDark ? 'bg-blue-400' : 'bg-blue-700'}`} />
+                        )}
+                      </span>
+                      <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>ADD CUSTOM MODE</span>
+                    </button>
+                  </div>
+
+                  {/* VIEW 1: WHEN "GO WITH EXISTING (DEFAULT)" IS SELECTED */}
+                  {divisorTab === 'DEFAULT' && (
+                    <div className="w-full space-y-2.5 animate-fade-in">
+                      {serviceType === 'DOMESTIC' ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 md:gap-4 w-full">
+                          {/* 4000 SURFACE MODE */}
+                          <div
+                            onClick={() => setDivisorMode('4000')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === '4000'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight leading-none">4000</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === '4000'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>SURFACE</span>
+                              <span>MODE</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === '4000'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === '4000' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 4500 AIR MODE */}
+                          <div
+                            onClick={() => setDivisorMode('4500')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === '4500'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight leading-none">4500</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === '4500'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>AIR</span>
+                              <span>MODE</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === '4500'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === '4500' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 5000 AIR CARGO */}
+                          <div
+                            onClick={() => setDivisorMode('5000')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === '5000'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight leading-none">5000</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === '5000'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>AIR</span>
+                              <span>CARGO</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === '5000'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === '5000' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* CUSTOM DIVISOR */}
+                          <div
+                            onClick={() => setDivisorMode('CUSTOM')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === 'CUSTOM'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight uppercase leading-none">CUSTOM</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === 'CUSTOM'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>DIVISOR</span>
+                              <span className="opacity-0 select-none text-[8px] leading-none hidden sm:inline">&nbsp;</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === 'CUSTOM'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === 'CUSTOM' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 md:gap-4 w-full">
+                          {/* 4500 AIR MODE */}
+                          <div
+                            onClick={() => setDivisorMode('4500')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === '4500'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight leading-none">4500</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === '4500'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>AIR</span>
+                              <span>MODE</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === '4500'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === '4500' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 5000 AIR CARGO */}
+                          <div
+                            onClick={() => setDivisorMode('5000')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === '5000'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight leading-none">5000</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === '5000'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>AIR</span>
+                              <span>CARGO</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === '5000'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === '5000' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* CUSTOM DIVISOR */}
+                          <div
+                            onClick={() => setDivisorMode('CUSTOM')}
+                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                              divisorMode === 'CUSTOM'
+                                ? isDark
+                                  ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                  : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                : isDark
+                                  ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                  : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                            }`}
+                          >
+                            <span className="text-base sm:text-lg font-black tracking-tight uppercase leading-none">CUSTOM</span>
+                            <div className={`text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight flex flex-col items-center justify-center ${
+                              divisorMode === 'CUSTOM'
+                                ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                : isDark ? 'text-slate-300' : 'text-slate-700'
+                            }`}>
+                              <span>DIVISOR</span>
+                              <span className="opacity-0 select-none text-[8px] leading-none hidden sm:inline">&nbsp;</span>
+                            </div>
+                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                divisorMode === 'CUSTOM'
+                                  ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                  : isDark ? 'border-slate-500' : 'border-slate-300'
+                              }`}>
+                                {divisorMode === 'CUSTOM' && (
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                  }`} />
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Custom Divisor Input if CUSTOM is active in Default view */}
+                      {divisorMode === 'CUSTOM' && (
+                        <div className="animate-fade-in max-w-xs mt-2.5">
+                          <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Custom Divisor
+                          </label>
+                          <input
+                            type="number"
+                            value={customDivisor}
+                            onChange={(e) => setCustomDivisor(e.target.value)}
+                            placeholder="5000"
+                            className={`w-full border rounded-lg p-2 text-xs focus:outline-none ${
+                              isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white'
+                            }`}
+                            required
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* VIEW 2: WHEN "ADD CUSTOM MODE" IS SELECTED */}
+                  {divisorTab === 'CUSTOM' && (
+                    <div className="w-full space-y-3.5 animate-fade-in">
+                      {/* Add Custom Mode Input Form */}
+                      <div className={`p-3.5 sm:p-4 rounded-xl border ${
+                        isDark ? 'bg-[#182B25]/60 border-[#264E41]' : 'bg-slate-50/80 border-slate-200'
+                      }`}>
+                        <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-bold text-xs mb-2.5">
+                          <PlusCircle className="w-4 h-4 shrink-0" />
+                          <span>ADD CUSTOM MODE</span>
+                        </div>
+
+                        <div
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleAddCustomMode();
+                            }
+                          }}
+                          className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end"
+                        >
+                          <div className="sm:col-span-6 md:col-span-5">
+                            <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                              Mode Name
+                            </label>
+                            <input
+                              type="text"
+                              value={newModeName}
+                              onChange={(e) => {
+                                setNewModeName(e.target.value);
+                                if (customModeError) setCustomModeError('');
+                              }}
+                              placeholder="Enter mode name (e.g. Express Cargo)"
+                              className={`w-full border rounded-lg text-xs px-3 py-2 focus:outline-none transition ${
+                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-slate-800 focus:border-[#107c5a]'
+                              }`}
+                            />
+                          </div>
+
+                          <div className="sm:col-span-4 md:col-span-4">
+                            <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                              Divisor Value
+                            </label>
+                            <input
+                              type="number"
+                              value={newModeDivisor}
+                              onChange={(e) => {
+                                setNewModeDivisor(e.target.value);
+                                if (customModeError) setCustomModeError('');
+                              }}
+                              placeholder="Enter divisor value (e.g. 5500)"
+                              className={`w-full border rounded-lg text-xs px-3 py-2 focus:outline-none transition ${
+                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-slate-800 focus:border-[#107c5a]'
+                              }`}
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2 md:col-span-3">
+                            <button
+                              type="button"
+                              onClick={() => handleAddCustomMode()}
+                              className="w-full py-2 px-3 rounded-lg bg-[#107c5a] hover:bg-[#0e382c] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {customModeError && (
+                          <p className="text-[11px] text-red-500 font-semibold mt-2">{customModeError}</p>
+                        )}
+                      </div>
+
+                      {/* Custom Modes List */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-[10px] sm:text-[11px] font-black uppercase tracking-wider ${
+                            isDark ? 'text-slate-300' : 'text-slate-700'
+                          }`}>
+                            CUSTOM MODES {userModes.length > 0 && `(${userModes.length})`}
+                          </span>
+                          {userModes.length > 0 && (
+                            <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Click a mode to select it as the active divisor
+                            </span>
+                          )}
+                        </div>
+
+                        {userModes.length === 0 ? (
+                          <div className={`p-4 rounded-xl border border-dashed text-center text-xs ${
+                            isDark ? 'border-slate-800 text-slate-400 bg-[#13241F]/40' : 'border-slate-200 text-slate-500 bg-slate-50/50'
+                          }`}>
+                            No custom modes added yet. Use the form above to add a custom mode (e.g. Express Cargo — 5500).
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-3">
+                            {userModes.map((mode) => {
+                              const isSelected = divisorMode === mode.id;
+                              return (
+                                <div
+                                  key={mode.id}
+                                  onClick={() => {
+                                    setDivisorMode(mode.id);
+                                    setSelectedCustomModeId(mode.id);
+                                  }}
+                                  className={`relative p-2.5 sm:p-3 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center min-w-0 box-border ${
+                                    isSelected
+                                      ? isDark
+                                        ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
+                                        : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
+                                      : isDark
+                                        ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
+                                        : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteUserMode(mode.id, e)}
+                                    title={`Remove ${mode.name}`}
+                                    aria-label={`Remove ${mode.name}`}
+                                    className="absolute -top-1.5 -right-1.5 bg-white dark:bg-[#1A2E27] border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-300 rounded-full p-1 transition shadow-xs cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                  <span className="text-sm sm:text-base font-black tracking-tight leading-none">{mode.divisor}</span>
+                                  <div className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-tight mt-1 text-center w-full leading-tight truncate px-1 ${
+                                    isSelected
+                                      ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
+                                      : isDark ? 'text-slate-300' : 'text-slate-700'
+                                  }`}>
+                                    {mode.name}
+                                  </div>
+                                  <div className="mt-2 flex items-center justify-center shrink-0">
+                                    <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                      isSelected
+                                        ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
+                                        : isDark ? 'border-slate-500' : 'border-slate-300'
+                                    }`}>
+                                      {isSelected && (
+                                        <span className={`w-1.5 h-1.5 rounded-full ${
+                                          isDark ? 'bg-emerald-400' : 'bg-[#107c5a]'
+                                        }`} />
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Radio-based Apply to All */}
-              <div className={`flex items-center gap-3.5 pt-1 border-b pb-3.5 flex-wrap ${
+              {/* Radio-based Apply to All & Reset Button */}
+              <div className={`flex items-center justify-between gap-3.5 pt-1 border-b pb-3.5 flex-wrap ${
                 isDark ? 'border-slate-800' : 'border-slate-100'
               }`}>
-                <div className={`px-2.5 py-1 rounded-md border font-extrabold text-xs uppercase tracking-wider shadow-2xs ${
-                  isDark 
-                    ? 'bg-[#182B25] border-[#264E41] text-emerald-300' 
-                    : 'bg-emerald-50/80 border-emerald-200/80 text-[#0F4C3A]'
-                }`}>
-                  APPLY TO ALL:
+                <div className="flex items-center gap-3.5 flex-wrap">
+                  <div className={`px-2.5 py-1 rounded-md border font-extrabold text-xs uppercase tracking-wider shadow-2xs ${
+                    isDark 
+                      ? 'bg-[#182B25] border-[#264E41] text-emerald-300' 
+                      : 'bg-emerald-50/80 border-emerald-200/80 text-[#0F4C3A]'
+                  }`}>
+                    APPLY TO ALL:
+                  </div>
+                  <div className="flex items-center gap-3.5">
+                    {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
+                      const isAllMatch = multiPackage
+                        ? packages.length > 0 && packages.every(p =>
+                            (p.lengthUnit || 'CM') === u &&
+                            (p.widthUnit || 'CM') === u &&
+                            (p.heightUnit || 'CM') === u
+                          )
+                        : (singlePkg.lengthUnit || lengthUnit) === u &&
+                          (singlePkg.widthUnit || widthUnit) === u &&
+                          (singlePkg.heightUnit || heightUnit) === u;
+                      return (
+                        <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
+                          isAllMatch
+                            ? isDark
+                              ? 'text-emerald-300 font-extrabold'
+                              : 'text-[#0F4C3A] font-extrabold'
+                            : isDark
+                              ? 'text-slate-300 font-semibold hover:text-white'
+                              : 'text-slate-700 font-semibold hover:text-slate-900'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="applyToAllUnit"
+                            value={u}
+                            checked={isAllMatch}
+                            onChange={() => handleApplyUnitToAll(u)}
+                            className="accent-[#107c5a] h-4 w-4 cursor-pointer"
+                          />
+                          <span className={isAllMatch ? 'underline underline-offset-2' : ''}>{u}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3.5">
-                  {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
-                    const isAllMatch = lengthUnit === u && widthUnit === u && heightUnit === u;
-                    return (
-                      <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
-                        isAllMatch
-                          ? isDark
-                            ? 'text-emerald-300 font-extrabold'
-                            : 'text-[#0F4C3A] font-extrabold'
-                          : isDark
-                            ? 'text-slate-300 font-semibold hover:text-white'
-                            : 'text-slate-700 font-semibold hover:text-slate-900'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="applyToAllUnit"
-                          value={u}
-                          checked={isAllMatch}
-                          onChange={() => handleApplyUnitToAll(u)}
-                          className="accent-[#107c5a] h-4 w-4 cursor-pointer"
-                        />
-                        <span className={isAllMatch ? 'underline underline-offset-2' : ''}>{u}</span>
-                      </label>
-                    );
-                  })}
+
+                {/* Top-Right Action Buttons: [ ↻ Reset ] [ + Add Package ] */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    id="package-dimensions-reset-btn"
+                    onClick={handleResetPackages}
+                    title="Reset all package entries"
+                    aria-label="Reset all package entries"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/30 ${
+                      isDark
+                        ? 'bg-[#182B25] border-[#264E41] text-red-400 hover:bg-red-950/40 hover:border-red-700/60 active:scale-[0.98]'
+                        : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200 active:scale-[0.98]'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="top-add-package-btn"
+                    onClick={() => {
+                      if (!multiPackage) {
+                        handleToggleMultiPackage(true);
+                        setPackages(prev => {
+                          const base = prev.length > 0 ? prev : [{
+                            length: singlePkg.length || '0',
+                            width: singlePkg.width || '0',
+                            height: singlePkg.height || '0',
+                            actualWeight: singlePkg.actualWeight || '',
+                            quantity: singlePkg.quantity || '1',
+                            multiplier: '1',
+                          }];
+                          return [...base, { length: '0', width: '0', height: '0', actualWeight: '', quantity: '1', multiplier: '1' }];
+                        });
+                      } else {
+                        addPackage();
+                      }
+                    }}
+                    title="Add another package"
+                    aria-label="Add another package"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/30 ${
+                      isDark
+                        ? 'bg-[#103A2D] hover:bg-[#164B3A] text-emerald-300 border-emerald-700/50 active:scale-[0.98]'
+                        : 'bg-[#f0f7f4] hover:bg-emerald-100 text-[#0F4C3A] border-[#107c5a]/30 active:scale-[0.98]'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Package</span>
+                  </button>
                 </div>
               </div>
 
               {/* Single Package vs Multiple Packages layout */}
               {!multiPackage ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 pt-1">
+                  {/* Actual Weight */}
+                  <div className="space-y-1.5">
+                    <label className={`block text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      Actual Weight (KG)
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="single-actualWeight"
+                        type="number"
+                        step="any"
+                        value={singlePkg.actualWeight}
+                        onChange={(e) => setSinglePkg({ ...singlePkg, actualWeight: e.target.value })}
+                        onKeyDown={(e) => handleSinglePackageKeyDown(e, 'actualWeight')}
+                        placeholder="Actual Weight (KG)"
+                        className={`w-full border rounded-lg p-2.5 text-xs focus:outline-none ${
+                          isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32] focus:border-emerald-400' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white focus:border-[#107c5a]'
+                        }`}
+                        required
+                      />
+                      <span className={`absolute right-3 top-2.5 text-xs font-bold ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                        KG
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Length */}
                   <div className="space-y-1.5">
                     <label className={`block text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                       Length ({lengthUnit})
                     </label>
                     <input
+                      id="single-length"
                       type="number"
                       step="any"
                       value={singlePkg.length}
                       onChange={(e) => setSinglePkg({ ...singlePkg, length: e.target.value })}
+                      onFocus={() => handleSingleDimensionFocus('length')}
+                      onClick={() => handleSingleDimensionFocus('length')}
+                      onKeyDown={(e) => handleSinglePackageKeyDown(e, 'length')}
                       placeholder="0.00"
                       className={`w-full border rounded-lg p-2.5 text-xs focus:outline-none ${
                         isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32] focus:border-emerald-400' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white focus:border-[#107c5a]'
                       }`}
                       required
                     />
-                    <div className="flex items-center gap-2.5 pt-1 flex-wrap">
+                    <div className="flex items-center justify-between pt-1 flex-nowrap gap-1 sm:gap-2">
                       {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
                         const isSelected = lengthUnit === u;
                         return (
-                          <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
+                          <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-xs transition-colors ${
                             isSelected
                               ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
                               : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
@@ -803,6 +1965,8 @@ function CalculatorContent() {
                               value={u}
                               checked={isSelected}
                               onChange={() => handleLengthUnitChange(u)}
+                              tabIndex={-1}
+                              onKeyDown={(e) => handleSingleUnitRadioKeyDown(e, 'length')}
                               className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
                             />
                             <span>{u}</span>
@@ -818,21 +1982,25 @@ function CalculatorContent() {
                       Width ({widthUnit})
                     </label>
                     <input
+                      id="single-width"
                       type="number"
                       step="any"
                       value={singlePkg.width}
                       onChange={(e) => setSinglePkg({ ...singlePkg, width: e.target.value })}
+                      onFocus={() => handleSingleDimensionFocus('width')}
+                      onClick={() => handleSingleDimensionFocus('width')}
+                      onKeyDown={(e) => handleSinglePackageKeyDown(e, 'width')}
                       placeholder="0.00"
                       className={`w-full border rounded-lg p-2.5 text-xs focus:outline-none ${
                         isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32] focus:border-emerald-400' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white focus:border-[#107c5a]'
                       }`}
                       required
                     />
-                    <div className="flex items-center gap-2.5 pt-1 flex-wrap">
+                    <div className="flex items-center justify-between pt-1 flex-nowrap gap-1 sm:gap-2">
                       {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
                         const isSelected = widthUnit === u;
                         return (
-                          <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
+                          <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-xs transition-colors ${
                             isSelected
                               ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
                               : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
@@ -843,6 +2011,8 @@ function CalculatorContent() {
                               value={u}
                               checked={isSelected}
                               onChange={() => handleWidthUnitChange(u)}
+                              tabIndex={-1}
+                              onKeyDown={(e) => handleSingleUnitRadioKeyDown(e, 'width')}
                               className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
                             />
                             <span>{u}</span>
@@ -858,21 +2028,25 @@ function CalculatorContent() {
                       Height ({heightUnit})
                     </label>
                     <input
+                      id="single-height"
                       type="number"
                       step="any"
                       value={singlePkg.height}
                       onChange={(e) => setSinglePkg({ ...singlePkg, height: e.target.value })}
+                      onFocus={() => handleSingleDimensionFocus('height')}
+                      onClick={() => handleSingleDimensionFocus('height')}
+                      onKeyDown={(e) => handleSinglePackageKeyDown(e, 'height')}
                       placeholder="0.00"
                       className={`w-full border rounded-lg p-2.5 text-xs focus:outline-none ${
                         isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32] focus:border-emerald-400' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white focus:border-[#107c5a]'
                       }`}
                       required
                     />
-                    <div className="flex items-center gap-2.5 pt-1 flex-wrap">
+                    <div className="flex items-center justify-between pt-1 flex-nowrap gap-1 sm:gap-2">
                       {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
                         const isSelected = heightUnit === u;
                         return (
-                          <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
+                          <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-xs transition-colors ${
                             isSelected
                               ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
                               : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
@@ -883,6 +2057,8 @@ function CalculatorContent() {
                               value={u}
                               checked={isSelected}
                               onChange={() => handleHeightUnitChange(u)}
+                              tabIndex={-1}
+                              onKeyDown={(e) => handleSingleUnitRadioKeyDown(e, 'height')}
                               className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
                             />
                             <span>{u}</span>
@@ -895,160 +2071,83 @@ function CalculatorContent() {
               ) : (
                 /* Multiple Packages View */
                 <div className="space-y-4 pt-1">
-                  {/* Dimension Units Selector Bar */}
-                  <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 p-3.5 rounded-xl border ${
-                    isDark ? 'bg-[#182B25] border-[#264E41]' : 'bg-slate-50 border-slate-200'
-                  }`}>
-                    <div>
-                      <span className={`block text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Length Unit</span>
-                      <div className="flex items-center gap-2.5 pt-1.5 flex-wrap">
-                        {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
-                          const isSelected = lengthUnit === u;
-                          return (
-                            <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
-                              isSelected
-                                ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
-                                : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
-                            }`}>
-                              <input
-                                type="radio"
-                                name="multiLengthUnit"
-                                value={u}
-                                checked={isSelected}
-                                onChange={() => handleLengthUnitChange(u)}
-                                className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
-                              />
-                              <span>{u}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <span className={`block text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Width Unit</span>
-                      <div className="flex items-center gap-2.5 pt-1.5 flex-wrap">
-                        {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
-                          const isSelected = widthUnit === u;
-                          return (
-                            <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
-                              isSelected
-                                ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
-                                : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
-                            }`}>
-                              <input
-                                type="radio"
-                                name="multiWidthUnit"
-                                value={u}
-                                checked={isSelected}
-                                onChange={() => handleWidthUnitChange(u)}
-                                className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
-                              />
-                              <span>{u}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <span className={`block text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Height Unit</span>
-                      <div className="flex items-center gap-2.5 pt-1.5 flex-wrap">
-                        {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
-                          const isSelected = heightUnit === u;
-                          return (
-                            <label key={u} className={`flex items-center gap-1.5 cursor-pointer text-xs transition-colors ${
-                              isSelected
-                                ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
-                                : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
-                            }`}>
-                              <input
-                                type="radio"
-                                name="multiHeightUnit"
-                                value={u}
-                                checked={isSelected}
-                                onChange={() => handleHeightUnitChange(u)}
-                                className="accent-[#107c5a] h-3.5 w-3.5 cursor-pointer"
-                              />
-                              <span>{u}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* List of packages */}
                   <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                     {packages.map((pkg, idx) => (
                       <div key={idx} className={`p-4 border rounded-xl space-y-3 relative ${
                         isDark ? 'bg-[#1A2E27] border-[#2E5448]' : 'bg-slate-50/70 border-slate-200'
                       }`}>
-                        <div className="flex items-center justify-between">
-                          <span className={`font-extrabold text-xs ${isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'}`}>Package {idx + 1}</span>
-                          {packages.length > 1 && (
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-3">
+                            <span className={`font-extrabold text-xs ${isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'}`}>
+                              Package {idx + 1}
+                            </span>
+
+                            {/* Package Multiplier */}
+                            <div className="flex items-center gap-1.5">
+                              <label className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                                Package Multiplier:
+                              </label>
+                              <input
+                                id={`pkg-${idx}-multiplier`}
+                                type="number"
+                                min="1"
+                                value={pkg.multiplier ?? '1'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '' || parseInt(val) > 0) {
+                                    updatePackageField(idx, 'multiplier', val);
+                                  }
+                                }}
+                                onKeyDown={(e) => handlePackageKeyDown(e, idx, 'multiplier')}
+                                className={`w-16 border rounded-lg text-xs p-1 px-2 text-center focus:outline-none ${
+                                  isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
+                                }`}
+                                placeholder="1"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => removePackage(idx)}
-                              className="text-red-500 hover:bg-red-50/10 p-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                              tabIndex={-1}
+                              onClick={() => resetPackage(idx)}
+                              title={`Reset Package ${idx + 1}`}
+                              aria-label={`Reset Package ${idx + 1}`}
+                              className={`p-1 px-2 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer border ${
+                                isDark
+                                  ? 'border-[#2E5448] bg-[#13241F] text-slate-300 hover:text-red-400 hover:border-red-800'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50/50'
+                              }`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Remove
+                              <RotateCcw className="w-3 h-3 text-red-500" />
+                              <span>Reset</span>
                             </button>
-                          )}
+
+                            {packages.length > 1 && (
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                onClick={() => removePackage(idx)}
+                                className="text-red-500 hover:bg-red-50/10 p-1 px-2 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Remove</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-[1.2fr_1.3fr_1.3fr_1.3fr_60px] gap-x-4 sm:gap-x-6 lg:gap-x-7 gap-y-3.5 items-start">
                           <div>
-                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Length ({lengthUnit})</label>
+                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Act Wt (KG)</label>
                             <input
-                              type="number"
-                              step="any"
-                              value={pkg.length}
-                              onChange={(e) => updatePackageField(idx, 'length', e.target.value)}
-                              placeholder="0.00"
-                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
-                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
-                              }`}
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Width ({widthUnit})</label>
-                            <input
-                              type="number"
-                              step="any"
-                              value={pkg.width}
-                              onChange={(e) => updatePackageField(idx, 'width', e.target.value)}
-                              placeholder="0.00"
-                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
-                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
-                              }`}
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Height ({heightUnit})</label>
-                            <input
-                              type="number"
-                              step="any"
-                              value={pkg.height}
-                              onChange={(e) => updatePackageField(idx, 'height', e.target.value)}
-                              placeholder="0.00"
-                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
-                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
-                              }`}
-                              required
-                            />
-                          </div>
-
-                          <div>
-                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Act Wt (KG)</label>
-                            <input
+                              id={`pkg-${idx}-actualWeight`}
                               type="number"
                               step="any"
                               value={pkg.actualWeight}
                               onChange={(e) => updatePackageField(idx, 'actualWeight', e.target.value)}
+                              onKeyDown={(e) => handlePackageKeyDown(e, idx, 'actualWeight')}
                               placeholder="0.00"
                               className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
                                 isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
@@ -1057,14 +2156,155 @@ function CalculatorContent() {
                             />
                           </div>
 
+                          {/* Length with independent unit selector underneath */}
                           <div>
+                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                              Length ({pkg.lengthUnit || 'CM'})
+                            </label>
+                            <input
+                              id={`pkg-${idx}-length`}
+                              type="number"
+                              step="any"
+                              value={pkg.length}
+                              onChange={(e) => updatePackageField(idx, 'length', e.target.value)}
+                              onFocus={() => handlePackageDimensionFocus(idx, 'length')}
+                              onClick={() => handlePackageDimensionFocus(idx, 'length')}
+                              onKeyDown={(e) => handlePackageKeyDown(e, idx, 'length')}
+                              placeholder="0.00"
+                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
+                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
+                              }`}
+                              required
+                            />
+                            <div className="flex items-center justify-between pt-1.5 flex-nowrap gap-1 sm:gap-2">
+                              {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
+                                const isSelected = (pkg.lengthUnit || 'CM') === u;
+                                return (
+                                  <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-[10px] sm:text-[11px] transition-colors ${
+                                    isSelected
+                                      ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
+                                      : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`pkg-${idx}-lengthUnit`}
+                                      value={u}
+                                      checked={isSelected}
+                                      onChange={() => handlePackageUnitChange(idx, 'length', u)}
+                                      tabIndex={-1}
+                                      onKeyDown={(e) => handleUnitRadioKeyDown(e, idx, 'length')}
+                                      className="accent-[#107c5a] h-3 w-3 cursor-pointer"
+                                    />
+                                    <span className={isSelected ? 'underline underline-offset-2' : ''}>{u}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Width with independent unit selector underneath */}
+                          <div>
+                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                              Width ({pkg.widthUnit || 'CM'})
+                            </label>
+                            <input
+                              id={`pkg-${idx}-width`}
+                              type="number"
+                              step="any"
+                              value={pkg.width}
+                              onChange={(e) => updatePackageField(idx, 'width', e.target.value)}
+                              onFocus={() => handlePackageDimensionFocus(idx, 'width')}
+                              onClick={() => handlePackageDimensionFocus(idx, 'width')}
+                              onKeyDown={(e) => handlePackageKeyDown(e, idx, 'width')}
+                              placeholder="0.00"
+                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
+                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
+                              }`}
+                              required
+                            />
+                            <div className="flex items-center justify-between pt-1.5 flex-nowrap gap-1 sm:gap-2">
+                              {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
+                                const isSelected = (pkg.widthUnit || 'CM') === u;
+                                return (
+                                  <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-[10px] sm:text-[11px] transition-colors ${
+                                    isSelected
+                                      ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
+                                      : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`pkg-${idx}-widthUnit`}
+                                      value={u}
+                                      checked={isSelected}
+                                      onChange={() => handlePackageUnitChange(idx, 'width', u)}
+                                      tabIndex={-1}
+                                      onKeyDown={(e) => handleUnitRadioKeyDown(e, idx, 'width')}
+                                      className="accent-[#107c5a] h-3 w-3 cursor-pointer"
+                                    />
+                                    <span className={isSelected ? 'underline underline-offset-2' : ''}>{u}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Height with independent unit selector underneath */}
+                          <div>
+                            <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                              Height ({pkg.heightUnit || 'CM'})
+                            </label>
+                            <input
+                              id={`pkg-${idx}-height`}
+                              type="number"
+                              step="any"
+                              value={pkg.height}
+                              onChange={(e) => updatePackageField(idx, 'height', e.target.value)}
+                              onFocus={() => handlePackageDimensionFocus(idx, 'height')}
+                              onClick={() => handlePackageDimensionFocus(idx, 'height')}
+                              onKeyDown={(e) => handlePackageKeyDown(e, idx, 'height')}
+                              placeholder="0.00"
+                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
+                                isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
+                              }`}
+                              required
+                            />
+                            <div className="flex items-center justify-between pt-1.5 flex-nowrap gap-1 sm:gap-2">
+                              {(['MM', 'CM', 'Inch', 'Feet'] as const).map((u) => {
+                                const isSelected = (pkg.heightUnit || 'CM') === u;
+                                return (
+                                  <label key={u} className={`flex items-center gap-1 shrink-0 cursor-pointer text-[10px] sm:text-[11px] transition-colors ${
+                                    isSelected
+                                      ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0F4C3A] font-extrabold'
+                                      : isDark ? 'text-slate-400 font-medium hover:text-slate-200' : 'text-slate-600 font-medium hover:text-slate-900'
+                                  }`}>
+                                    <input
+                                      type="radio"
+                                      name={`pkg-${idx}-heightUnit`}
+                                      value={u}
+                                      checked={isSelected}
+                                      onChange={() => handlePackageUnitChange(idx, 'height', u)}
+                                      tabIndex={-1}
+                                      onKeyDown={(e) => handleUnitRadioKeyDown(e, idx, 'height')}
+                                      className="accent-[#107c5a] h-3 w-3 cursor-pointer"
+                                    />
+                                    <span className={isSelected ? 'underline underline-offset-2' : ''}>{u}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Quantity */}
+                          <div className="w-full max-w-[60px]">
                             <label className={`block text-[11px] font-semibold uppercase mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Qty</label>
                             <input
+                              id={`pkg-${idx}-quantity`}
                               type="number"
                               min="1"
                               value={pkg.quantity}
                               onChange={(e) => updatePackageField(idx, 'quantity', e.target.value)}
-                              className={`w-full border rounded-lg text-xs p-2 focus:outline-none ${
+                              onKeyDown={(e) => handlePackageKeyDown(e, idx, 'quantity')}
+                              className={`w-full max-w-[60px] border rounded-lg text-xs p-2 focus:outline-none ${
                                 isDark ? 'bg-[#13241F] border-[#2E5448] text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-[#1c2e24] focus:border-[#107c5a]'
                               }`}
                               required
@@ -1078,7 +2318,14 @@ function CalculatorContent() {
                   <div className="pt-2">
                     <button
                       type="button"
+                      id="bottom-add-package-btn"
                       onClick={addPackage}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Tab' && e.shiftKey) {
+                          e.preventDefault();
+                          focusField(`pkg-${packages.length - 1}-quantity`);
+                        }
+                      }}
                       className={`w-full sm:w-auto border text-xs font-bold py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
                         isDark ? 'bg-[#103A2D] hover:bg-[#164B3A] text-emerald-300 border-emerald-700/50' : 'bg-[#f0f7f4] hover:bg-emerald-100 text-[#0F4C3A] border-[#107c5a]/30'
                       }`}
@@ -1091,182 +2338,20 @@ function CalculatorContent() {
               )}
             </div>
 
-            {/* Divisor with Service-Type specific selectable options */}
-            <div className={`border p-5 rounded-2xl shadow-sm space-y-4 ${
-              isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
-            }`}>
-              <span className={`block text-xs font-extrabold uppercase tracking-wider ${
-                isDark ? 'text-slate-200' : 'text-slate-800'
-              }`}>
-                Divisor ({serviceType === 'DOMESTIC' ? 'Domestic' : 'International'})
-              </span>
-
-              {serviceType === 'DOMESTIC' ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div
-                    onClick={() => setDivisorMode('4000')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === '4000'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight">4000</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === '4000'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>SURFACE MODE</span>
-                  </div>
-
-                  <div
-                    onClick={() => setDivisorMode('4500')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === '4500'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight">4500</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === '4500'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>AIR MODE</span>
-                  </div>
-
-                  <div
-                    onClick={() => setDivisorMode('5000')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === '5000'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight">5000</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === '5000'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>AIR CARGO</span>
-                  </div>
-
-                  <div
-                    onClick={() => setDivisorMode('CUSTOM')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === 'CUSTOM'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight uppercase">CUSTOM</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === 'CUSTOM'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>DIVISOR</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div
-                    onClick={() => setDivisorMode('4500')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === '4500'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight">4500</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === '4500'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>AIR MODE</span>
-                  </div>
-
-                  <div
-                    onClick={() => setDivisorMode('5000')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === '5000'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight">5000</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === '5000'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>AIR CARGO</span>
-                  </div>
-
-                  <div
-                    onClick={() => setDivisorMode('CUSTOM')}
-                    className={`flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition duration-150 ${
-                      divisorMode === 'CUSTOM'
-                        ? isDark
-                          ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
-                          : 'border-2 border-[#107c5a] bg-[#f0f7f4] text-[#0e382c] shadow-xs font-bold'
-                        : isDark
-                          ? 'border-[#264E41] bg-[#182B25] text-slate-400 hover:bg-[#1F362E]'
-                          : 'border-slate-200/80 bg-white text-slate-500 hover:bg-slate-50/50'
-                    }`}
-                  >
-                    <span className="text-lg font-black tracking-tight uppercase">CUSTOM</span>
-                    <span className={`text-[10px] sm:text-xs font-extrabold uppercase tracking-wider mt-1.5 text-center ${
-                      divisorMode === 'CUSTOM'
-                        ? isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'
-                        : isDark ? 'text-slate-300' : 'text-slate-700'
-                    }`}>DIVISOR</span>
-                  </div>
-                </div>
-              )}
-
-              {divisorMode === 'CUSTOM' && (
-                <div className="animate-fade-in max-w-sm pt-2">
-                  <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Custom Divisor</label>
-                  <input
-                    type="number"
-                    value={customDivisor}
-                    onChange={(e) => setCustomDivisor(e.target.value)}
-                    placeholder="5000"
-                    className={`w-full border rounded-lg p-2.5 text-xs focus:outline-none ${
-                      isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white'
-                    }`}
-                    required
-                  />
-                </div>
-              )}
-            </div>
-
             <button
               type="submit"
+              id="compute-volumetric-weight-btn"
               disabled={loading || demoState?.demoLimitReached}
+              onKeyDown={(e) => {
+                if (e.key === 'Tab' && e.shiftKey) {
+                  e.preventDefault();
+                  if (multiPackage) {
+                    focusField('bottom-add-package-btn');
+                  } else {
+                    focusField('single-height');
+                  }
+                }
+              }}
               className="w-full bg-[#107c5a] hover:bg-[#0e382c] disabled:bg-slate-300 disabled:text-slate-500 text-white py-4 rounded-xl font-bold text-sm transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? 'Performing calculations...' : 'Compute Volumetric Weight'}
@@ -1275,13 +2360,13 @@ function CalculatorContent() {
         </div>
 
         {/* Right Column: Result Panel */}
-        <div className="space-y-6 lg:sticky lg:top-20">
+        <div className="space-y-6 lg:sticky lg:top-3">
           <div id="calculator-result-panel" className={`border rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[300px] ${
             isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
           }`}>
             <div className={`p-5 ${isDark ? 'bg-[#0A261D] text-emerald-300' : 'bg-[#0e382c] text-white'}`}>
               <h3 className="font-extrabold text-xs uppercase tracking-wider">Evaluation Result</h3>
-              <p className={`text-[10px] font-light mt-0.5 ${isDark ? 'text-emerald-400/80' : 'text-emerald-100'}`}>SaaS volumetric output statistics</p>
+              <p className={`text-[10px] font-light mt-0.5 ${isDark ? 'text-emerald-400/80' : 'text-emerald-100'}`}>Volumetric output statistics</p>
             </div>
 
             {result ? (
@@ -1308,13 +2393,17 @@ function CalculatorContent() {
                       isDark ? 'bg-[#182B25] border-[#264E41] text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-800'
                     }`}>
                       <span className={`block text-[9px] font-bold uppercase ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Actual Weight</span>
-                      <span className="text-base font-black">{result.actualWeight} KG</span>
+                      <span className="text-base font-black">
+                        {(currentCalculationResult ? currentCalculationResult.actualWeight.toFixed(3) : result.actualWeight)} KG
+                      </span>
                     </div>
                     <div className={`p-3 border rounded-xl ${
                       isDark ? 'bg-[#182B25] border-[#264E41] text-slate-100' : 'bg-slate-50 border-slate-200 text-slate-800'
                     }`}>
                       <span className={`block text-[9px] font-bold uppercase ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Volumetric Weight</span>
-                      <span className="text-base font-black">{result.volumetricWeight} KG</span>
+                      <span className="text-base font-black">
+                        {(currentCalculationResult ? currentCalculationResult.volumetricWeight.toFixed(3) : result.volumetricWeight)} KG
+                      </span>
                     </div>
                   </div>
 
@@ -1325,7 +2414,9 @@ function CalculatorContent() {
                       : 'bg-[#0F4C3A] border-[#0c3c2e] text-white'
                   }`}>
                     <span className={`block text-[10px] font-extrabold uppercase tracking-wider ${isDark ? 'text-emerald-300' : 'text-emerald-200'}`}>Final Chargeable Weight</span>
-                    <span className="text-3xl font-black mt-1 block tracking-tight">{result.chargeableWeight} KG</span>
+                    <span className="text-3xl font-black mt-1 block tracking-tight">
+                      {(currentCalculationResult ? currentCalculationResult.chargeableWeight.toFixed(3) : result.chargeableWeight)} KG
+                    </span>
                     <span className={`text-[9px] font-medium mt-1.5 block ${isDark ? 'text-emerald-200/80' : 'text-emerald-100/90'}`}>
                       Calculated as MAX of actual vs volumetric weight
                     </span>
@@ -1406,6 +2497,231 @@ function CalculatorContent() {
               </div>
             )}
           </div>
+
+          {/* Package Breakdown / Individual Evaluation Section */}
+          <div
+            id="calculator-package-breakdown-panel"
+            className={`border rounded-2xl shadow-sm overflow-hidden transition-all duration-200 ${
+              isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
+            }`}
+          >
+            {/* Dropdown / Expand-Collapse Header */}
+            <button
+              type="button"
+              onClick={() => setBreakdownExpanded(!breakdownExpanded)}
+              aria-expanded={breakdownExpanded}
+              aria-controls="package-breakdown-content"
+              className={`w-full flex items-center justify-between p-4 sm:p-5 text-left transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+                isDark
+                  ? 'hover:bg-[#182B25]/80 bg-[#14231E]'
+                  : 'hover:bg-slate-50/80 bg-white'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2 rounded-xl flex items-center justify-center ${
+                    isDark ? 'bg-[#1D332B] text-emerald-400' : 'bg-emerald-50 text-[#0F4C3A]'
+                  }`}
+                >
+                  <Package className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className={`text-xs font-extrabold uppercase tracking-wider ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                    Package Breakdown
+                  </h4>
+                  <p className={`text-[10px] font-normal mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    View individual package calculations
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 sm:gap-5 flex-wrap sm:flex-nowrap justify-end">
+                {/* Total Actual Weight auto-sum display */}
+                <div className="text-right">
+                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Total Actual Weight
+                  </span>
+                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-extrabold ${
+                    isDark ? 'text-slate-200' : 'text-slate-800'
+                  }`}>
+                    {totalActualWeight.toFixed(3)} KG
+                  </span>
+                </div>
+
+                {/* Total Volumetric Weight auto-sum display */}
+                <div className="text-right">
+                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Total Volumetric Weight
+                  </span>
+                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-extrabold ${
+                    isDark ? 'text-slate-200' : 'text-slate-800'
+                  }`}>
+                    {totalVolumetricWeight.toFixed(3)} KG
+                  </span>
+                </div>
+
+                {/* Total Chargeable Weight auto-sum display */}
+                <div className="text-right">
+                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Total Chargeable Weight
+                  </span>
+                  <div className="mt-0.5">
+                    <span
+                      className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] sm:text-xs font-black shadow-2xs border ${
+                        isDark
+                          ? 'bg-amber-950/80 text-amber-200 border-amber-700/60'
+                          : 'bg-[#FDE68A] text-[#78350F] border-[#F59E0B]/30'
+                      }`}
+                    >
+                      {totalChargeableWeight.toFixed(3)} KG
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className={`p-1.5 rounded-lg transition shrink-0 ${
+                    isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {breakdownExpanded ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </div>
+              </div>
+            </button>
+
+            {/* Individual Package Calculations Content */}
+            {breakdownExpanded && (
+              <div
+                id="package-breakdown-content"
+                className={`border-t divide-y text-xs transition-all ${
+                  isDark
+                    ? 'border-[#264E41] divide-slate-800/80 bg-[#14231E]'
+                    : 'border-slate-100 divide-slate-100 bg-white'
+                }`}
+              >
+                {packageBreakdown.length === 0 ? (
+                  <div
+                    className={`p-6 text-center text-xs font-medium ${
+                      isDark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    No package calculations available.
+                  </div>
+                ) : (
+                  packageBreakdown.map((pkg) => (
+                    <div
+                      key={pkg.index}
+                      className={`p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 transition-colors ${
+                        isDark ? 'hover:bg-[#182B25]/50' : 'hover:bg-slate-50/60'
+                      }`}
+                    >
+                      {/* Package Label */}
+                      <div className="flex items-center gap-1.5 min-w-[95px] shrink-0">
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className={`font-bold text-xs ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                          Package {pkg.index}
+                        </span>
+                      </div>
+
+                      {/* Package Metrics: Actual Weight, Volumetric Weight, Chargeable Weight */}
+                      <div className="grid grid-cols-3 gap-2 sm:gap-4 flex-grow items-center text-left">
+                        {/* Actual Weight */}
+                        <div>
+                          <span
+                            className={`block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider ${
+                              pkg.isActualHigher
+                                ? isDark
+                                  ? 'text-amber-400'
+                                  : 'text-amber-700'
+                                : isDark
+                                ? 'text-slate-400'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            Actual Weight
+                          </span>
+                          <span
+                            className={`text-xs block mt-0.5 ${
+                              pkg.isActualHigher
+                                ? isDark
+                                  ? 'text-amber-300 font-extrabold'
+                                  : 'text-amber-900 font-extrabold'
+                                : isDark
+                                ? 'text-slate-200 font-medium'
+                                : 'text-slate-700 font-medium'
+                            }`}
+                          >
+                            {pkg.actualWeight.toFixed(3)} KG
+                          </span>
+                        </div>
+
+                        {/* Volumetric Weight */}
+                        <div>
+                          <span
+                            className={`block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider ${
+                              pkg.isVolumetricHigher
+                                ? isDark
+                                  ? 'text-amber-400'
+                                  : 'text-amber-700'
+                                : isDark
+                                ? 'text-slate-400'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            Volumetric Weight
+                          </span>
+                          <span
+                            className={`text-xs block mt-0.5 ${
+                              pkg.isVolumetricHigher
+                                ? isDark
+                                  ? 'text-amber-300 font-extrabold'
+                                  : 'text-amber-900 font-extrabold'
+                                : isDark
+                                ? 'text-slate-200 font-medium'
+                                : 'text-slate-700 font-medium'
+                            }`}
+                          >
+                            {pkg.volumetricWeight.toFixed(3)} KG
+                          </span>
+                        </div>
+
+                        {/* Chargeable Weight with Gold Highlight Badge */}
+                        <div className="text-right sm:text-right">
+                          <span
+                            className={`block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider ${
+                              isDark ? 'text-slate-400' : 'text-slate-400'
+                            }`}
+                          >
+                            Chargeable Weight
+                          </span>
+                          <div className="mt-0.5 inline-block">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-black shadow-2xs border ${
+                                isDark
+                                  ? 'bg-amber-950/80 text-amber-200 border-amber-700/60'
+                                  : 'bg-[#FDE68A] text-[#78350F] border-[#F59E0B]/30'
+                              }`}
+                            >
+                              {pkg.chargeableWeight.toFixed(3)} KG
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1417,12 +2733,14 @@ function CalculatorContent() {
           pdfBlob={sharePdfData.blob}
           pdfFilename={sharePdfData.filename}
           customerName={user?.name || 'Customer'}
-          weight={result?.chargeableWeight?.toString() || '0'}
+          weight={(currentCalculationResult?.chargeableWeight ?? result?.chargeableWeight)?.toString() || '0'}
           companyName={defaultTemplate?.companyName || user?.company || user?.name || 'Company'}
           authorizedPerson={user?.name || 'Authorized Signatory'}
           quoteNumber={result?.id ? `CALC-${result.id.substring(0, 8)}` : `CALC-${Date.now()}`}
         />
       )}
+
+
     </div>
   );
 }

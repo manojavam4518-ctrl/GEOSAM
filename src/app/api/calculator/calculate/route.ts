@@ -136,7 +136,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const totalChargeableWeight = Math.max(totalActualWeight, totalVolumetricWeight);
+    // Explicit Volumetric Weight Evaluation Logic:
+    // The volumetric evaluation must ALWAYS use the GREATER value between:
+    // 1. Total Actual Weight
+    // 2. Total Volumetric Weight
+    // FINAL CHARGEABLE WEIGHT = MAX(ACTUAL WEIGHT, VOLUMETRIC WEIGHT)
+    const finalActualWeight = parseFloat(totalActualWeight.toFixed(3));
+    const finalVolumetricWeight = parseFloat(totalVolumetricWeight.toFixed(3));
+    const totalChargeableWeight = Math.max(finalActualWeight, finalVolumetricWeight);
 
     // 4.5. Shipping Price Engine using Dynamic Rate Slabs
     let calculatedCost: number | null = null;
@@ -291,10 +298,10 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         unit,
         divisor: parsedDivisor,
-        packageCount: packages.length,
-        actualWeight: parseFloat(totalActualWeight.toFixed(3)),
-        volumetricWeight: parseFloat(totalVolumetricWeight.toFixed(3)),
-        chargeableWeight: parseFloat(totalChargeableWeight.toFixed(3)),
+        packageCount: packages.reduce((sum: number, p: any) => sum + (parseInt(p.quantity as any) || 1), 0),
+        actualWeight: finalActualWeight,
+        volumetricWeight: finalVolumetricWeight,
+        chargeableWeight: totalChargeableWeight,
         packages: processedPackages as any,
         shippingCost: calculatedCost,
         rateCardId: selectedRateCard?.id || null,
@@ -352,9 +359,9 @@ export async function POST(req: NextRequest) {
       success: true,
       calculation: savedCalculation,
       summary: {
-        totalActualWeight: parseFloat(totalActualWeight.toFixed(3)),
-        totalVolumetricWeight: parseFloat(totalVolumetricWeight.toFixed(3)),
-        totalChargeableWeight: parseFloat(totalChargeableWeight.toFixed(3)),
+        totalActualWeight: finalActualWeight,
+        totalVolumetricWeight: finalVolumetricWeight,
+        totalChargeableWeight: totalChargeableWeight,
         divisor: parsedDivisor,
         unit,
         shippingCost: calculatedCost,
