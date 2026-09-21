@@ -108,18 +108,24 @@ export async function POST(req: NextRequest) {
       const height = parseFloat(pkg.height as any);
       const actualWeight = parseFloat(pkg.actualWeight as any);
       const quantity = parseInt(pkg.quantity as any) || 1;
+      const multiplier = parseInt((pkg as any).multiplier as any) || 1;
+      const effectiveQty = Math.max(1, quantity) * Math.max(1, multiplier);
 
-      if (isNaN(length) || length <= 0 ||
-          isNaN(width) || width <= 0 ||
-          isNaN(height) || height <= 0 ||
-          isNaN(actualWeight) || actualWeight <= 0 ||
-          quantity <= 0) {
-        return NextResponse.json({ error: 'Package dimensions and weight must be positive numbers.' }, { status: 400 });
+      if (isNaN(length) || length < 0 ||
+          isNaN(width) || width < 0 ||
+          isNaN(height) || height < 0 ||
+          isNaN(actualWeight) || actualWeight < 0 ||
+          effectiveQty <= 0) {
+        return NextResponse.json({ error: 'Package dimensions and weight must be non-negative numbers.' }, { status: 400 });
+      }
+
+      if (length === 0 && width === 0 && height === 0 && actualWeight === 0) {
+        return NextResponse.json({ error: 'Package must have either positive weight or dimensions.' }, { status: 400 });
       }
 
       // Calculate volumetric weight: (L * W * H) / Divisor * Quantity
-      const volumetricWeight = ((length * width * height) / parsedDivisor) * quantity;
-      const totalPkgActual = actualWeight * quantity;
+      const volumetricWeight = parsedDivisor > 0 ? ((length * width * height) / parsedDivisor) * effectiveQty : 0;
+      const totalPkgActual = actualWeight * effectiveQty;
 
       totalActualWeight += totalPkgActual;
       totalVolumetricWeight += volumetricWeight;
@@ -130,20 +136,20 @@ export async function POST(req: NextRequest) {
         height,
         actualWeight: totalPkgActual,
         volumetricWeight: parseFloat(volumetricWeight.toFixed(3)),
-        volumetricWeightPerUnit: parseFloat((volumetricWeight / quantity).toFixed(3)),
+        volumetricWeightPerUnit: parseFloat((volumetricWeight / effectiveQty).toFixed(3)),
         totalChargeableWeight: parseFloat(Math.max(totalPkgActual, volumetricWeight).toFixed(3)),
-        quantity,
+        quantity: effectiveQty,
       });
     }
 
-    // Explicit Volumetric Weight Evaluation Logic:
-    // The volumetric evaluation must ALWAYS use the GREATER value between:
-    // 1. Total Actual Weight
-    // 2. Total Volumetric Weight
-    // FINAL CHARGEABLE WEIGHT = MAX(ACTUAL WEIGHT, VOLUMETRIC WEIGHT)
+    // Package-level Chargeable Weight Evaluation Logic:
+    // Step 3 — Determine each package's chargeable weight: MAX(Package Actual Weight, Package Volumetric Weight)
+    // Step 4 — Sum the package-level chargeable weights: SUM(Package Chargeable Weight for every package)
     const finalActualWeight = parseFloat(totalActualWeight.toFixed(3));
     const finalVolumetricWeight = parseFloat(totalVolumetricWeight.toFixed(3));
-    const totalChargeableWeight = Math.max(finalActualWeight, finalVolumetricWeight);
+    const totalChargeableWeight = parseFloat(
+      processedPackages.reduce((sum, pkg) => sum + pkg.totalChargeableWeight, 0).toFixed(3)
+    );
 
     // 4.5. Shipping Price Engine using Dynamic Rate Slabs
     let calculatedCost: number | null = null;
@@ -298,7 +304,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         unit,
         divisor: parsedDivisor,
-        packageCount: packages.reduce((sum: number, p: any) => sum + (parseInt(p.quantity as any) || 1), 0),
+        packageCount: packages.reduce((sum: number, p: any) => sum + ((parseInt(p.quantity as any) || 1) * (parseInt((p as any).multiplier as any) || 1)), 0),
         actualWeight: finalActualWeight,
         volumetricWeight: finalVolumetricWeight,
         chargeableWeight: totalChargeableWeight,

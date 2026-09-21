@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { exportWeightCalculationPDF, takeScreenshot } from '@/utils/exportUtils';
 import ShareMenuModal from '@/components/ShareMenuModal';
 import {
@@ -65,7 +65,6 @@ function CalculatorContent() {
   const [converterExpanded, setConverterExpanded] = useState(true);
 
   // Unit Converter State
-  const [selectedUnit, setSelectedUnit] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [convFrom, setConvFrom] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [convTo, setConvTo] = useState<'MM' | 'CM' | 'Inch' | 'Feet'>('CM');
   const [convValue, setConvValue] = useState('10');
@@ -103,6 +102,34 @@ function CalculatorContent() {
   const [packages, setPackages] = useState<PackageItem[]>([
     { length: '0', width: '0', height: '0', actualWeight: '', quantity: '1', multiplier: '1', lengthUnit: 'CM', widthUnit: 'CM', heightUnit: 'CM' }
   ]);
+
+  // Package list container & auto-scroll refs
+  const packageListContainerRef = useRef<HTMLDivElement>(null);
+  const lastAddedPackageRef = useRef<HTMLDivElement>(null);
+  const prevPackageCountRef = useRef<number>(packages.length);
+
+  // Auto-scroll newly added package into full view within internal scroll container
+  useEffect(() => {
+    if (packages.length > prevPackageCountRef.current) {
+      requestAnimationFrame(() => {
+        if (packageListContainerRef.current && lastAddedPackageRef.current) {
+          const container = packageListContainerRef.current;
+          const target = lastAddedPackageRef.current;
+          const containerRect = container.getBoundingClientRect();
+          const targetRect = target.getBoundingClientRect();
+
+          const offsetDiff = targetRect.bottom - containerRect.bottom;
+          if (offsetDiff > 0) {
+            container.scrollBy({
+              top: offsetDiff + 20,
+              behavior: 'smooth',
+            });
+          }
+        }
+      });
+    }
+    prevPackageCountRef.current = packages.length;
+  }, [packages.length]);
 
   // Results & Sharing State
   const [loading, setLoading] = useState(false);
@@ -259,24 +286,44 @@ function CalculatorContent() {
     return packageBreakdown.reduce((sum, item) => sum + item.volumetricWeight, 0);
   }, [packageBreakdown]);
 
-  // Final Chargeable Weight = MAX(Total Actual Weight, Total Volumetric Weight)
+  // Final Chargeable Weight = SUM(Package Chargeable Weight for every package)
+  // where each Package Chargeable Weight = MAX(Package Actual Weight, Package Volumetric Weight)
   const totalChargeableWeight = useMemo(() => {
-    return Math.max(totalActualWeight, totalVolumetricWeight);
-  }, [totalActualWeight, totalVolumetricWeight]);
+    return packageBreakdown.reduce((sum, item) => sum + item.chargeableWeight, 0);
+  }, [packageBreakdown]);
 
-  // Active calculation report values that dynamically reflect MAX(Total Actual Weight, Total Volumetric Weight)
+  // Active calculation report values that dynamically reflect package-level sum of chargeable weights
   const currentCalculationResult = useMemo(() => {
     if (!result) return null;
-    const finalActual = totalActualWeight > 0 ? parseFloat(totalActualWeight.toFixed(3)) : (parseFloat(result.actualWeight) || 0);
-    const finalVolumetric = totalVolumetricWeight > 0 ? parseFloat(totalVolumetricWeight.toFixed(3)) : (parseFloat(result.volumetricWeight) || 0);
-    const finalChargeable = Math.max(finalActual, finalVolumetric);
+    const finalActual = parseFloat(totalActualWeight.toFixed(3));
+    const finalVolumetric = parseFloat(totalVolumetricWeight.toFixed(3));
+    const finalChargeable = parseFloat(totalChargeableWeight.toFixed(3));
     return {
       ...result,
       actualWeight: finalActual,
       volumetricWeight: finalVolumetric,
       chargeableWeight: finalChargeable,
+      packages: packageBreakdown.map((pkg, idx) => {
+        const src = multiPackage ? packages[idx] : singlePkg;
+        const pLen = parseFloat(src?.length || '0') || 0;
+        const pWid = parseFloat(src?.width || '0') || 0;
+        const pHei = parseFloat(src?.height || '0') || 0;
+        const pQty = parseInt(src?.quantity || '1') || 1;
+        const pMult = parseInt(src?.multiplier || '1') || 1;
+        const effQty = Math.max(1, pQty) * Math.max(1, pMult);
+        return {
+          length: pLen,
+          width: pWid,
+          height: pHei,
+          actualWeight: pkg.actualWeight,
+          volumetricWeight: parseFloat(pkg.volumetricWeight.toFixed(3)),
+          volumetricWeightPerUnit: parseFloat((pkg.volumetricWeight / effQty).toFixed(3)),
+          totalChargeableWeight: parseFloat(pkg.chargeableWeight.toFixed(3)),
+          quantity: effQty,
+        };
+      }),
     };
-  }, [result, totalActualWeight, totalVolumetricWeight]);
+  }, [result, totalActualWeight, totalVolumetricWeight, totalChargeableWeight, packageBreakdown, multiPackage, packages, singlePkg]);
 
   // Run Unit Converter calculation automatically
   useEffect(() => {
@@ -289,19 +336,13 @@ function CalculatorContent() {
     setConvResult(converted);
   }, [convValue, convFrom, convTo]);
 
-  // Radio button unit selection handler
-  const handleUnitRadioChange = (unit: 'MM' | 'CM' | 'Inch' | 'Feet') => {
-    setSelectedUnit(unit);
-    setConvFrom(unit);
-    setConvTo(unit);
+  // Reset Unit Converter to default initial state
+  const handleResetUnitConverter = () => {
+    setConvFrom('CM');
+    setConvTo('CM');
+    setConvValue('10');
+    setConvResult(10);
   };
-
-  // Sync selected radio unit if user updates dropdowns to matching units
-  useEffect(() => {
-    if (convFrom === convTo) {
-      setSelectedUnit(convFrom);
-    }
-  }, [convFrom, convTo]);
 
   // Apply converted result to calculator dimensions
   function handleApplyToCalculator(targetField: 'length' | 'width' | 'height') {
@@ -852,12 +893,16 @@ function CalculatorContent() {
         const mult = parseInt(p.multiplier || '1') || 1;
         const effectiveQty = Math.max(1, qty) * Math.max(1, mult);
 
-        if (isNaN(len) || len <= 0 || isNaN(wid) || wid <= 0 || isNaN(hei) || hei <= 0) {
+        if (isNaN(len) || len < 0 || isNaN(wid) || wid < 0 || isNaN(hei) || hei < 0) {
           setError(`Package #${i + 1} has invalid or negative dimensions.`);
           return;
         }
         if (isNaN(act) || act < 0) {
           setError(`Package #${i + 1} has invalid or negative weight.`);
+          return;
+        }
+        if (len === 0 && wid === 0 && hei === 0 && act === 0) {
+          setError(`Package #${i + 1} must have either positive weight or positive dimensions.`);
           return;
         }
 
@@ -884,12 +929,16 @@ function CalculatorContent() {
       const act = parseFloat(singlePkg.actualWeight);
       const qty = parseInt(singlePkg.quantity);
 
-      if (isNaN(len) || len <= 0 || isNaN(wid) || wid <= 0 || isNaN(hei) || hei <= 0) {
-        setError('Please enter valid positive dimensions (Length, Width, Height).');
+      if (isNaN(len) || len < 0 || isNaN(wid) || wid < 0 || isNaN(hei) || hei < 0) {
+        setError('Please enter valid non-negative dimensions (Length, Width, Height).');
         return;
       }
       if (isNaN(act) || act < 0) {
-        setError('Actual weight must be a positive number.');
+        setError('Actual weight must be a non-negative number.');
+        return;
+      }
+      if (len === 0 && wid === 0 && hei === 0 && act === 0) {
+        setError('Please enter either positive weight or positive dimensions.');
         return;
       }
 
@@ -978,9 +1027,9 @@ function CalculatorContent() {
           <div className={`border rounded-2xl shadow-sm overflow-hidden ${
             isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
           }`}>
-            {/* Header with Title, Unit Radio Panels, and Collapse Button */}
+            {/* Header with Title and Collapse Button */}
             <div
-              className={`w-full flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-3.5 border-b text-left ${
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-3.5 border-b text-left ${
                 isDark ? 'bg-[#182B25] border-[#264E41]' : 'bg-[#F8FAFC] border-slate-200'
               }`}
             >
@@ -993,67 +1042,6 @@ function CalculatorContent() {
                   Unit Converter
                 </span>
               </button>
-
-              {/* Radio Button Unit Panels */}
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" role="radiogroup" aria-label="Unit Converter Unit Selection">
-                {[
-                  { id: 'MM' as const, label: 'MM', full: 'Millimeters' },
-                  { id: 'CM' as const, label: 'CM', full: 'Centimeters' },
-                  { id: 'Inch' as const, label: 'INCH', full: 'Inches' },
-                  { id: 'Feet' as const, label: 'FEET', full: 'Feet' },
-                ].map((u) => {
-                  const isSelected = selectedUnit === u.id;
-                  return (
-                    <label
-                      key={u.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUnitRadioChange(u.id);
-                      }}
-                      className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all ${
-                        isSelected
-                          ? isDark
-                            ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
-                            : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
-                          : isDark
-                            ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="unitConverterRadio"
-                        value={u.id}
-                        checked={isSelected}
-                        onChange={() => handleUnitRadioChange(u.id)}
-                        className="sr-only"
-                      />
-                      <span
-                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected
-                            ? isDark
-                              ? 'border-emerald-400 bg-[#103A2D]'
-                              : 'border-[#1E8262] bg-[#E8F5E9]'
-                            : isDark
-                              ? 'border-slate-500 bg-[#14231E]'
-                              : 'border-slate-300 bg-white'
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {isSelected && (
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
-                            }`}
-                          />
-                        )}
-                      </span>
-                      <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
-                      <span className={`text-[10px] font-bold hidden md:inline ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>— {u.full}</span>
-                    </label>
-                  );
-                })}
-              </div>
 
               <button
                 type="button"
@@ -1072,68 +1060,217 @@ function CalculatorContent() {
             </div>
 
             {converterExpanded && (
-              <div className="p-5 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-                  <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert From</label>
-                    <select
-                      value={convFrom}
-                      onChange={(e) => setConvFrom(e.target.value as any)}
-                      className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
-                        isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-slate-700 focus:bg-white'
-                      }`}
-                    >
-                      <option value="MM">MM (Millimeters)</option>
-                      <option value="CM">CM (Centimeters)</option>
-                      <option value="Inch">Inch (Inches)</option>
-                      <option value="Feet">Feet (Feets)</option>
-                    </select>
+              <div className="p-4 sm:p-5 space-y-3.5 sm:space-y-4">
+                {/* Top-Right Action Row: Reset Button */}
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    id="unit-converter-reset-btn"
+                    onClick={handleResetUnitConverter}
+                    title="Reset unit converter"
+                    aria-label="Reset unit converter"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/30 ${
+                      isDark
+                        ? 'bg-[#182B25] border-[#264E41] text-red-400 hover:bg-red-950/40 hover:border-red-700/60 active:scale-[0.98]'
+                        : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200 active:scale-[0.98]'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6">
+                  {/* Left Column: Convert From (Input Side) */}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                      <div>
+                        <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert From</label>
+                        <select
+                          value={convFrom}
+                          onChange={(e) => setConvFrom(e.target.value as any)}
+                          className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
+                            isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-slate-700 focus:bg-white'
+                          }`}
+                        >
+                          <option value="MM">MM (Millimeters)</option>
+                          <option value="CM">CM (Centimeters)</option>
+                          <option value="Inch">Inch (Inches)</option>
+                          <option value="Feet">Feet (Feets)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Value</label>
+                        <input
+                          type="number"
+                          value={convValue}
+                          onChange={(e) => setConvValue(e.target.value)}
+                          placeholder="10"
+                          className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
+                            isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Input Unit Selector Radio Buttons */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" role="radiogroup" aria-label="Convert From Unit Selection">
+                      {[
+                        { id: 'MM' as const, label: 'MM' },
+                        { id: 'CM' as const, label: 'CM' },
+                        { id: 'Inch' as const, label: 'IN' },
+                        { id: 'Feet' as const, label: 'FT' },
+                      ].map((u) => {
+                        const isSelected = convFrom === u.id;
+                        return (
+                          <label
+                            key={u.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConvFrom(u.id);
+                            }}
+                            className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
+                                  : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
+                                : isDark
+                                  ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="unitConverterFromRadio"
+                              value={u.id}
+                              checked={isSelected}
+                              onChange={() => setConvFrom(u.id)}
+                              className="sr-only"
+                            />
+                            <span
+                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                isSelected
+                              ? isDark
+                                ? 'border-emerald-400 bg-[#103A2D]'
+                                : 'border-[#1E8262] bg-[#E8F5E9]'
+                              : isDark
+                                ? 'border-slate-500 bg-[#14231E]'
+                                : 'border-slate-300 bg-white'
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {isSelected && (
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
+                                  }`}
+                                />
+                              )}
+                            </span>
+                            <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Value</label>
-                    <input
-                      type="number"
-                      value={convValue}
-                      onChange={(e) => setConvValue(e.target.value)}
-                      placeholder="10"
-                      className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
-                        isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-[#1c2e24] focus:bg-white'
-                      }`}
-                    />
-                  </div>
+                  {/* Right Column: Convert To (Output Side) */}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+                      <div>
+                        <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert To</label>
+                        <select
+                          value={convTo}
+                          onChange={(e) => setConvTo(e.target.value as any)}
+                          className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
+                            isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-slate-700 focus:bg-white'
+                          }`}
+                        >
+                          <option value="MM">MM (Millimeters)</option>
+                          <option value="CM">CM (Centimeters)</option>
+                          <option value="Inch">Inch (Inches)</option>
+                          <option value="Feet">Feet (Feets)</option>
+                        </select>
+                      </div>
 
-                  <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Convert To</label>
-                    <select
-                      value={convTo}
-                      onChange={(e) => setConvTo(e.target.value as any)}
-                      className={`w-full border rounded-lg text-xs p-2 focus:outline-none h-[34px] ${
-                        isDark ? 'bg-[#1D332B] border-[#2E5448] text-white focus:bg-[#223C32]' : 'bg-slate-50 border-slate-200 text-slate-700 focus:bg-white'
-                      }`}
-                    >
-                      <option value="MM">MM (Millimeters)</option>
-                      <option value="CM">CM (Centimeters)</option>
-                      <option value="Inch">Inch (Inches)</option>
-                      <option value="Feet">Feet (Feets)</option>
-                    </select>
-                  </div>
+                      <div>
+                        <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Conversion Result</label>
+                        <div className={`w-full border rounded-lg text-xs p-2 font-bold select-all h-[34px] flex items-center justify-start px-3 ${
+                          isDark ? 'bg-[#103A2D] border-emerald-700/60 text-emerald-300' : 'bg-[#E8F5E9] border-emerald-200 text-[#0F4C3A]'
+                        }`}>
+                          {convResult !== null 
+                            ? `${convResult} ${getUnitReadableName(convTo, convResult)}` 
+                            : `0.00 ${getUnitReadableName(convTo, 0)}`
+                          }
+                        </div>
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className={`block text-[10px] font-bold uppercase mb-1 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Conversion Result</label>
-                    <div className={`w-full border rounded-lg text-xs p-2 font-bold select-all h-[34px] flex items-center justify-start px-3 ${
-                      isDark ? 'bg-[#103A2D] border-emerald-700/60 text-emerald-300' : 'bg-[#E8F5E9] border-emerald-200 text-[#0F4C3A]'
-                    }`}>
-                      {convResult !== null 
-                        ? `${convResult} ${getUnitReadableName(convTo, convResult)}` 
-                        : `0.00 ${getUnitReadableName(convTo, 0)}`
-                      }
+                    {/* Output Unit Selector Radio Buttons */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" role="radiogroup" aria-label="Convert To Unit Selection">
+                      {[
+                        { id: 'MM' as const, label: 'MM' },
+                        { id: 'CM' as const, label: 'CM' },
+                        { id: 'Inch' as const, label: 'IN' },
+                        { id: 'Feet' as const, label: 'FT' },
+                      ].map((u) => {
+                        const isSelected = convTo === u.id;
+                        return (
+                          <label
+                            key={u.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConvTo(u.id);
+                            }}
+                            className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all ${
+                              isSelected
+                                ? isDark
+                                  ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
+                                  : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
+                                : isDark
+                                  ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="unitConverterToRadio"
+                              value={u.id}
+                              checked={isSelected}
+                              onChange={() => setConvTo(u.id)}
+                              className="sr-only"
+                            />
+                            <span
+                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                isSelected
+                              ? isDark
+                                ? 'border-emerald-400 bg-[#103A2D]'
+                                : 'border-[#1E8262] bg-[#E8F5E9]'
+                              : isDark
+                                ? 'border-slate-500 bg-[#14231E]'
+                                : 'border-slate-300 bg-white'
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {isSelected && (
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
+                                  }`}
+                                />
+                              )}
+                            </span>
+                            <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
 
                 {/* Apply Buttons */}
-                <div className={`border-t pt-4 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className={`border-t pt-3.5 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
                   <span className={`block text-[10px] font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
                     USE IN CALCULATOR:
                   </span>
@@ -2072,11 +2209,16 @@ function CalculatorContent() {
                 /* Multiple Packages View */
                 <div className="space-y-4 pt-1">
                   {/* List of packages */}
-                  <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                  <div ref={packageListContainerRef} className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                     {packages.map((pkg, idx) => (
-                      <div key={idx} className={`p-4 border rounded-xl space-y-3 relative ${
-                        isDark ? 'bg-[#1A2E27] border-[#2E5448]' : 'bg-slate-50/70 border-slate-200'
-                      }`}>
+                      <div
+                        key={idx}
+                        ref={idx === packages.length - 1 ? lastAddedPackageRef : null}
+                        id={`package-panel-${idx}`}
+                        className={`p-4 border rounded-xl space-y-3 relative ${
+                          isDark ? 'bg-[#1A2E27] border-[#2E5448]' : 'bg-slate-50/70 border-slate-200'
+                        }`}
+                      >
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-3">
                             <span className={`font-extrabold text-xs ${isDark ? 'text-emerald-300' : 'text-[#0F4C3A]'}`}>
@@ -2408,7 +2550,7 @@ function CalculatorContent() {
                   </div>
 
                   {/* Chargeable Weight readout */}
-                  <div className={`p-4 border rounded-xl text-center shadow-xs ${
+                  <div className={`w-[80%] mx-auto py-3 px-3 border rounded-xl text-center shadow-xs ${
                     isDark 
                       ? 'bg-[#103A2D] border-emerald-600/60 text-white' 
                       : 'bg-[#0F4C3A] border-[#0c3c2e] text-white'
@@ -2505,98 +2647,120 @@ function CalculatorContent() {
               isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
             }`}
           >
-            {/* Dropdown / Expand-Collapse Header */}
+            {/* Header Top Row: Package Breakdown Title & Collapse Toggle (Bold Contrast Background) */}
             <button
               type="button"
               onClick={() => setBreakdownExpanded(!breakdownExpanded)}
               aria-expanded={breakdownExpanded}
               aria-controls="package-breakdown-content"
-              className={`w-full flex items-center justify-between p-4 sm:p-5 text-left transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+              className={`w-full flex items-center justify-between p-3.5 sm:p-4 text-left transition cursor-pointer border-b focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
                 isDark
-                  ? 'hover:bg-[#182B25]/80 bg-[#14231E]'
-                  : 'hover:bg-slate-50/80 bg-white'
+                  ? 'bg-[#1E382E] hover:bg-[#234237] border-[#2A5243]'
+                  : 'bg-[#DCECE2] hover:bg-[#D4E7DC] border-[#C7DFD2]'
               }`}
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={`p-2 rounded-xl flex items-center justify-center ${
-                    isDark ? 'bg-[#1D332B] text-emerald-400' : 'bg-emerald-50 text-[#0F4C3A]'
+                  className={`p-2 rounded-xl flex items-center justify-center shadow-xs ${
+                    isDark ? 'bg-[#14231E] text-emerald-400' : 'bg-white text-[#0F4C3A]'
                   }`}
                 >
                   <Package className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className={`text-xs font-extrabold uppercase tracking-wider ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                  <h4 className={`text-xs font-extrabold uppercase tracking-wider ${isDark ? 'text-slate-100' : 'text-[#0F4C3A]'}`}>
                     Package Breakdown
                   </h4>
-                  <p className={`text-[10px] font-normal mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`text-[10px] font-medium mt-0.5 ${isDark ? 'text-emerald-400/90' : 'text-[#1B5E4A]'}`}>
                     View individual package calculations
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 sm:gap-5 flex-wrap sm:flex-nowrap justify-end">
+              <div
+                className={`p-1.5 rounded-lg transition shrink-0 ${
+                  isDark
+                    ? 'text-emerald-400 hover:text-emerald-200 hover:bg-[#14231E]/60'
+                    : 'text-[#0F4C3A] hover:bg-white/60'
+                }`}
+              >
+                {breakdownExpanded ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </div>
+            </button>
+
+            {/* Total Summary Section: Soft Blue Tinted Background Aligned with Package Rows */}
+            <div
+              onClick={() => setBreakdownExpanded(!breakdownExpanded)}
+              className={`w-full p-3.5 sm:p-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 cursor-pointer transition-colors ${
+                isDark
+                  ? 'bg-[#13222E] hover:bg-[#182C3B] border-[#1E374B]'
+                  : 'bg-[#EEF4FB] hover:bg-[#E3EDF8] border-[#D8E6F5]'
+              }`}
+            >
+              {/* Column 1: Package / Total Summary Label */}
+              <div className="flex items-center gap-1.5 min-w-[95px] shrink-0">
+                <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider ${
+                  isDark ? 'text-sky-400' : 'text-slate-800'
+                }`}>
+                  Total Summary
+                </span>
+              </div>
+
+              {/* Columns 2, 3, 4: Total Actual Weight, Total Volumetric Weight, Total Chargeable Weight */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-4 flex-grow items-center text-left">
                 {/* Total Actual Weight auto-sum display */}
-                <div className="text-right">
-                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
+                <div>
+                  <span className={`block text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wider ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
                   }`}>
                     Total Actual Weight
                   </span>
-                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-extrabold ${
-                    isDark ? 'text-slate-200' : 'text-slate-800'
+                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-black ${
+                    isDark ? 'text-slate-100' : 'text-slate-950'
                   }`}>
                     {totalActualWeight.toFixed(3)} KG
                   </span>
                 </div>
 
                 {/* Total Volumetric Weight auto-sum display */}
-                <div className="text-right">
-                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
+                <div>
+                  <span className={`block text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wider ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
                   }`}>
                     Total Volumetric Weight
                   </span>
-                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-extrabold ${
-                    isDark ? 'text-slate-200' : 'text-slate-800'
+                  <span className={`text-[11px] sm:text-xs block mt-0.5 font-black ${
+                    isDark ? 'text-slate-100' : 'text-slate-950'
                   }`}>
                     {totalVolumetricWeight.toFixed(3)} KG
                   </span>
                 </div>
 
                 {/* Total Chargeable Weight auto-sum display */}
-                <div className="text-right">
-                  <span className={`block text-[8px] sm:text-[9px] font-bold uppercase tracking-wider ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
+                <div className="text-right sm:text-right">
+                  <span className={`block text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wider ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
                   }`}>
                     Total Chargeable Weight
                   </span>
-                  <div className="mt-0.5">
+                  <div className="mt-0.5 inline-block">
                     <span
-                      className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] sm:text-xs font-black shadow-2xs border ${
+                      className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] sm:text-xs font-black shadow-xs border ${
                         isDark
                           ? 'bg-amber-950/80 text-amber-200 border-amber-700/60'
-                          : 'bg-[#FDE68A] text-[#78350F] border-[#F59E0B]/30'
+                          : 'bg-[#FDE68A] text-[#78350F] border-[#F59E0B]/40'
                       }`}
                     >
                       {totalChargeableWeight.toFixed(3)} KG
                     </span>
                   </div>
                 </div>
-
-                <div
-                  className={`p-1.5 rounded-lg transition shrink-0 ${
-                    isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  {breakdownExpanded ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
-                </div>
               </div>
-            </button>
+            </div>
 
             {/* Individual Package Calculations Content */}
             {breakdownExpanded && (
