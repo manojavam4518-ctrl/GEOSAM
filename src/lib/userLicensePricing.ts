@@ -56,6 +56,61 @@ export async function getAllUserLicensePricings() {
   }));
 }
 
+export interface ModulePriceItem {
+  key: string;
+  name: string;
+  category: string;
+  description?: string;
+  monthlyPrice: number;
+  price: number;
+}
+
+/**
+ * Calculates the exact license price for an array of selected module keys based on duration.
+ * Reads directly from Super Admin configured PlatformModule tiered pricing.
+ */
+export async function calculateModuleBasedLicensePrice(
+  moduleKeys: string[],
+  durationMonths: number
+): Promise<{ items: ModulePriceItem[]; totalBasePrice: number }> {
+  if (!moduleKeys || moduleKeys.length === 0) {
+    return { items: [], totalBasePrice: 0 };
+  }
+
+  const modules = await (prisma as any).platformModule.findMany({
+    where: {
+      key: { in: moduleKeys },
+      active: true,
+    },
+  });
+
+  const items: ModulePriceItem[] = modules.map((m: any) => {
+    let price = 0;
+    if (durationMonths === 3) {
+      price = m.price3Months > 0 ? m.price3Months : (m.monthlyPrice || 0) * 3;
+    } else if (durationMonths === 6) {
+      price = m.price6Months > 0 ? m.price6Months : (m.monthlyPrice || 0) * 6;
+    } else if (durationMonths === 12) {
+      price = m.price12Months > 0 ? m.price12Months : (m.monthlyPrice || 0) * 12;
+    } else {
+      price = (m.monthlyPrice || 0) * durationMonths;
+    }
+
+    return {
+      key: m.key,
+      name: m.name,
+      category: m.category,
+      description: m.description,
+      monthlyPrice: m.monthlyPrice || 0,
+      price,
+    };
+  });
+
+  const totalBasePrice = items.reduce((sum, it) => sum + it.price, 0);
+
+  return { items, totalBasePrice };
+}
+
 export interface EligibilityResult {
   hasActiveSubscription: boolean;
   subscriptionEndDate: string | null;
@@ -72,6 +127,8 @@ export interface EligibilityResult {
   usersCount: number;
   totalPayable: number;
   actualExpiryDate: string | null;
+  moduleBreakdown?: ModulePriceItem[];
+  selectedModules?: string[];
 }
 
 /**
@@ -81,7 +138,8 @@ export interface EligibilityResult {
 export async function calculateLicenseEligibility(
   organizationId: string,
   durationMonths: number,
-  usersCount: number = 1
+  usersCount: number = 1,
+  selectedModules: string[] = []
 ): Promise<EligibilityResult> {
   const now = new Date();
 
@@ -117,9 +175,20 @@ export async function calculateLicenseEligibility(
   const durationOption =
     DURATION_OPTIONS.find((d) => d.months === durationMonths) || DURATION_OPTIONS[0];
   const standardDays = durationOption.standardDays;
-  const configuredPrice = await getUserLicensePrice(durationOption.months);
-  const dailyRate = parseFloat((configuredPrice / standardDays).toFixed(4));
 
+  // Calculate pricing based on selected modules if provided, or fallback to fixed tier
+  let configuredPrice = 0;
+  let moduleBreakdown: ModulePriceItem[] = [];
+
+  if (selectedModules && selectedModules.length > 0) {
+    const modCalc = await calculateModuleBasedLicensePrice(selectedModules, durationOption.months);
+    moduleBreakdown = modCalc.items;
+    configuredPrice = modCalc.totalBasePrice;
+  } else {
+    configuredPrice = await getUserLicensePrice(durationOption.months);
+  }
+
+  const dailyRate = parseFloat((configuredPrice / standardDays).toFixed(4));
   const safeUsersCount = Math.max(1, Math.floor(usersCount || 1));
 
   if (!activeSub) {
@@ -140,6 +209,8 @@ export async function calculateLicenseEligibility(
       usersCount: safeUsersCount,
       totalPayable: 0,
       actualExpiryDate: null,
+      moduleBreakdown,
+      selectedModules,
     };
   }
 
@@ -190,6 +261,8 @@ export async function calculateLicenseEligibility(
       usersCount: safeUsersCount,
       totalPayable,
       actualExpiryDate: subEndDate.toISOString(),
+      moduleBreakdown,
+      selectedModules,
     };
   }
 
@@ -212,5 +285,7 @@ export async function calculateLicenseEligibility(
     usersCount: safeUsersCount,
     totalPayable,
     actualExpiryDate: fullExpiry.toISOString(),
+    moduleBreakdown,
+    selectedModules,
   };
 }

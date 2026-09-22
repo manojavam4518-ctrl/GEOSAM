@@ -31,6 +31,7 @@ import {
   Calendar,
   DollarSign,
   Lock,
+  WalletCards,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -139,8 +140,10 @@ export default function DashboardLayout({
   }
 
   const isOrgAdmin = user?.role === 'ORG_ADMIN' || user?.role === 'ADMIN';
+  const isOwner = user?.role === 'OWNER';
   const isAdditionalUser = Boolean(user?.isAdditionalUser);
   const assignedModules = user?.assignedModules || [];
+  const activeModuleKeys = user?.activeModuleKeys || [];
 
   const rawMenuGroups = [
     ...(isOrgAdmin
@@ -151,6 +154,15 @@ export default function DashboardLayout({
               { name: 'Employee Directory', path: '/dashboard/employees', icon: Users, moduleKey: 'EMPLOYEE_MANAGEMENT' },
               { name: 'Attendance Register', path: '/dashboard/attendance', icon: Calendar, moduleKey: 'ATTENDANCE' },
               { name: 'Payroll & Salary Slips', path: '/dashboard/payroll', icon: DollarSign, moduleKey: 'PAYROLL' },
+              { name: 'User Accounts', path: '/dashboard/users', icon: UserCheck },
+            ],
+          },
+        ]
+      : isOwner
+      ? [
+          {
+            title: 'ORGANIZATION',
+            items: [
               { name: 'User Accounts', path: '/dashboard/users', icon: UserCheck },
             ],
           },
@@ -180,6 +192,7 @@ export default function DashboardLayout({
         { name: 'Weight Calculator', path: '/dashboard/calculator', icon: Scale, moduleKey: 'WEIGHT_CALCULATOR' },
         { name: 'Rate Calculator', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
         { name: 'Rate Cards', path: '/dashboard/rate-cards', icon: Tags, moduleKey: 'RATE_CARDS' },
+        { name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
         { name: 'Pincode Lookup', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
         { name: 'Carrier Tracking', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
         { name: 'Calculation History', path: '/dashboard/history', icon: History, moduleKey: 'CALCULATION_HISTORY' },
@@ -210,13 +223,26 @@ export default function DashboardLayout({
     },
   ];
 
-  // For Additional Users, strictly filter out any menu items that are not in assigned modules
+  // Dynamic Module Filtering:
+  // 1. If Super Admin deactivated the module in PlatformModule, it is excluded for all customer users.
+  // 2. For Additional Users, strictly filter out any menu items that are not in assigned modules.
+  // 3. For Primary Company Users (!isAdditionalUser), show active entitled modules.
   const menuGroups = rawMenuGroups
     .map((group) => {
-      if (!isAdditionalUser) return group;
       const filteredItems = group.items.filter((item: any) => {
-        if (!item.moduleKey) return true; // General item (Overview, Profile, Devices)
-        return assignedModules.includes(item.moduleKey);
+        if (!item.moduleKey) return true; // General item (Overview, Profile, Devices, User Accounts)
+
+        // Super Admin module catalogue activation check
+        if (activeModuleKeys.length > 0 && !activeModuleKeys.includes(item.moduleKey)) {
+          return false;
+        }
+
+        // Additional users must have module assigned to their license
+        if (isAdditionalUser) {
+          return assignedModules.includes(item.moduleKey);
+        }
+
+        return true;
       });
       return { ...group, items: filteredItems };
     })
@@ -671,6 +697,124 @@ export default function DashboardLayout({
                     </div>
                   </div>
                 );
+              }
+
+              // Global check: If Super Admin deactivated the module in catalogue, block direct URL access
+              const PLATFORM_ROUTE_MAP = [
+                { pathPrefix: '/dashboard/calculator', moduleKey: 'WEIGHT_CALCULATOR', name: 'Weight Calculator' },
+                { pathPrefix: '/dashboard/rate-calculator', moduleKey: 'RATE_CALCULATOR', name: 'Rate Calculator' },
+                { pathPrefix: '/dashboard/rate-cards', moduleKey: 'RATE_CARDS', name: 'Rate Cards' },
+                { pathPrefix: '/dashboard/pincode-serviceability', moduleKey: 'PINCODE_LOOKUP', name: 'Pincode Lookup' },
+                { pathPrefix: '/dashboard/tracking', moduleKey: 'CARRIER_TRACKING', name: 'Carrier Tracking' },
+                { pathPrefix: '/dashboard/history', moduleKey: 'CALCULATION_HISTORY', name: 'Calculation History' },
+                { pathPrefix: '/dashboard/sales-follow-up', moduleKey: 'SALES_FOLLOW_UP', name: 'Sales Follow-Up' },
+                { pathPrefix: '/dashboard/quotations', moduleKey: 'QUOTATIONS', name: 'Quotations Tracker' },
+                { pathPrefix: '/dashboard/packaging', moduleKey: 'PACKAGING_SHOP', name: 'Cargo Packaging Shop' },
+                { pathPrefix: '/dashboard/employees', moduleKey: 'EMPLOYEE_MANAGEMENT', name: 'Employee Directory' },
+                { pathPrefix: '/dashboard/attendance', moduleKey: 'ATTENDANCE', name: 'Attendance Register' },
+                { pathPrefix: '/dashboard/payroll', moduleKey: 'PAYROLL', name: 'Payroll & Salary Slips' },
+                { pathPrefix: '/dashboard/cash-ledger', moduleKey: 'COUNTER_CASH_LEDGER', name: 'Counter Cash Ledger' },
+              ];
+
+              if (user?.role !== 'ADMIN' && activeModuleKeys.length > 0) {
+                const deactivatedRoute = PLATFORM_ROUTE_MAP.find(
+                  (m) => pathname.startsWith(m.pathPrefix) && !activeModuleKeys.includes(m.moduleKey)
+                );
+                if (deactivatedRoute) {
+                  return (
+                    <div className="bg-white border border-amber-200 rounded-2xl p-8 max-w-lg mx-auto text-center shadow-md my-12">
+                      <div className="w-16 h-16 bg-amber-50 text-amber-600 flex items-center justify-center rounded-full mx-auto mb-6">
+                        <Lock className="w-8 h-8" />
+                      </div>
+                      <h2 className="text-xl font-bold text-slate-900">Module Currently Disabled</h2>
+                      <div className="inline-block bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1 rounded-full text-xs font-bold mt-2">
+                        Module: {deactivatedRoute.name}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-4 leading-relaxed">
+                        The <strong>{deactivatedRoute.name}</strong> module is currently deactivated by the platform administrator.
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-3 mt-8 justify-center">
+                        <button
+                          onClick={() => router.push('/dashboard')}
+                          className="bg-[#0F4C3A] hover:bg-[#1E8262] text-white py-2.5 px-6 rounded-xl text-xs font-bold transition shadow-sm"
+                        >
+                          Return to Dashboard
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+              }
+
+              // Security: Check Additional User module assignment
+              if (isAdditionalUser) {
+                if (user?.status !== 'ACTIVE') {
+                  return (
+                    <div className="bg-white border border-red-200 rounded-2xl p-8 max-w-lg mx-auto text-center shadow-md my-12">
+                      <div className="w-16 h-16 bg-red-50 text-red-600 flex items-center justify-center rounded-full mx-auto mb-6">
+                        <Lock className="w-8 h-8" />
+                      </div>
+                      <h2 className="text-xl font-bold text-red-700">Account Disabled</h2>
+                      <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                        Your user account has been disabled by your Organization Administrator. Please contact your organization owner for assistance.
+                      </p>
+                      <div className="mt-6">
+                        <button
+                          onClick={handleLogout}
+                          className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 rounded-xl text-xs font-bold transition shadow-sm"
+                        >
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Check unassigned module access
+                const ROUTE_MODULE_MAP = [
+                  { pathPrefix: '/dashboard/calculator', moduleKey: 'WEIGHT_CALCULATOR', name: 'Weight Calculator' },
+                  { pathPrefix: '/dashboard/rate-calculator', moduleKey: 'RATE_CALCULATOR', name: 'Rate Calculator' },
+                  { pathPrefix: '/dashboard/rate-cards', moduleKey: 'RATE_CARDS', name: 'Rate Cards' },
+                  { pathPrefix: '/dashboard/pincode-serviceability', moduleKey: 'PINCODE_LOOKUP', name: 'Pincode Lookup' },
+                  { pathPrefix: '/dashboard/tracking', moduleKey: 'CARRIER_TRACKING', name: 'Carrier Tracking' },
+                  { pathPrefix: '/dashboard/history', moduleKey: 'CALCULATION_HISTORY', name: 'Calculation History' },
+                  { pathPrefix: '/dashboard/sales-follow-up', moduleKey: 'SALES_FOLLOW_UP', name: 'Sales Follow-Up' },
+                  { pathPrefix: '/dashboard/quotations', moduleKey: 'QUOTATIONS', name: 'Quotations Tracker' },
+                  { pathPrefix: '/dashboard/packaging', moduleKey: 'PACKAGING_SHOP', name: 'Cargo Packaging Shop' },
+                  { pathPrefix: '/dashboard/employees', moduleKey: 'EMPLOYEE_MANAGEMENT', name: 'Employee Directory' },
+                  { pathPrefix: '/dashboard/attendance', moduleKey: 'ATTENDANCE', name: 'Attendance Register' },
+                  { pathPrefix: '/dashboard/payroll', moduleKey: 'PAYROLL', name: 'Payroll & Salary Slips' },
+                  { pathPrefix: '/dashboard/cash-ledger', moduleKey: 'COUNTER_CASH_LEDGER', name: 'Counter Cash Ledger' },
+                  { pathPrefix: '/dashboard/users', moduleKey: 'USER_ACCOUNTS', name: 'User Accounts' },
+                ];
+
+                const matchedModule = ROUTE_MODULE_MAP.find((m) => pathname.startsWith(m.pathPrefix));
+                if (matchedModule) {
+                  if (matchedModule.moduleKey === 'USER_ACCOUNTS' || !assignedModules.includes(matchedModule.moduleKey)) {
+                    return (
+                      <div className="bg-white border border-amber-200 rounded-2xl p-8 max-w-lg mx-auto text-center shadow-md my-12">
+                        <div className="w-16 h-16 bg-amber-50 text-amber-600 flex items-center justify-center rounded-full mx-auto mb-6">
+                          <Lock className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
+                        <div className="inline-block bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1 rounded-full text-xs font-bold mt-2">
+                          Module: {matchedModule.name}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-4 leading-relaxed">
+                          Your employee account does not have permission to access the <strong>{matchedModule.name}</strong> module. This feature has not been assigned to your user license by your Organization Administrator.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3 mt-8 justify-center">
+                          <button
+                            onClick={() => router.push('/dashboard')}
+                            className="bg-[#0F4C3A] hover:bg-[#1E8262] text-white py-2.5 px-6 rounded-xl text-xs font-bold transition shadow-sm"
+                          >
+                            Return to Dashboard
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                }
               }
 
               return children;

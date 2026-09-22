@@ -32,8 +32,8 @@ export async function PATCH(
     }
 
     const session = await verifyDeviceSession(verified.sessionToken);
-    if (!session || (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN')) {
-      return NextResponse.json({ error: 'Forbidden: Organization Admin access required.' }, { status: 403 });
+    if (!session || (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN' && session.user.role !== 'OWNER')) {
+      return NextResponse.json({ error: 'Forbidden: Organization Admin or Owner access required.' }, { status: 403 });
     }
 
     const org = await getSessionOrganization(session.userId, session.user.organizationId);
@@ -54,9 +54,136 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { status, roleId } = body;
+    const { status, roleId, assignedModules, name, mobile, email } = body;
 
-    // 1. Handle Role Change (Requirements 26 & 27)
+    // 1. Handle Direct Module Update (Requirement 8)
+    if (assignedModules !== undefined && Array.isArray(assignedModules)) {
+      // Validate modules
+      const activePlatformModules = await (prisma as any).platformModule.findMany({
+        where: {
+          key: { in: assignedModules },
+          active: true,
+        },
+      });
+
+      const validKeys = activePlatformModules.map((m: any) => m.key);
+      const previousModules = targetUser.assignedModules || [];
+
+      // Update User assigned modules immediately
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: {
+          assignedModules: validKeys,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          mobile: true,
+          assignedModules: true,
+          status: true,
+        },
+      });
+
+      // Update UserLicense records
+      await (prisma as any).userLicense.updateMany({
+        where: { userId: id, organizationId: org.id },
+        data: {
+          assignedModules: validKeys,
+        },
+      });
+
+      // Record Audit Log
+      await recordAuditLog({
+        userId: session.user.id,
+        userEmail: session.user.email,
+        organizationId: org.id,
+        action: `Updated Assigned Modules for User: ${targetUser.name} (${validKeys.join(', ') || 'None'})`,
+        relatedRecordId: id,
+        metadata: {
+          targetUserId: id,
+          targetUserName: targetUser.name,
+          previousModules,
+          newModules: validKeys,
+          organizationId: org.id,
+          changedBy: session.user.email,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Assigned modules for '${targetUser.name}' updated successfully (${validKeys.length} modules active).`,
+        user: updatedUser,
+      });
+    }
+
+    // 2. Handle User Profile Details Update (Name, Mobile, Email)
+    if (name || mobile || email) {
+      const updateData: any = {};
+      if (name && name.trim()) updateData.name = name.trim();
+      if (mobile && mobile.trim()) updateData.mobile = mobile.trim();
+      if (email && email.trim()) {
+        const cleanEmail = email.trim().toLowerCase();
+        // Check uniqueness if email changed
+        if (cleanEmail !== targetUser.email) {
+          const emailExists = await prisma.user.findUnique({ where: { email: cleanEmail } });
+          if (emailExists) {
+            return NextResponse.json({ error: 'An account with this email address already exists.' }, { status: 400 });
+          }
+        }
+        updateData.email = cleanEmail;
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: updateData,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          mobile: true,
+          assignedModules: true,
+          status: true,
+        },
+      });
+
+      // Also update linked Employee and UserLicense
+      await prisma.employee.updateMany({
+        where: { userId: id, organizationId: org.id },
+        data: {
+          ...(updateData.name ? { name: updateData.name } : {}),
+          ...(updateData.mobile ? { mobile: updateData.mobile } : {}),
+          ...(updateData.email ? { email: updateData.email } : {}),
+        },
+      });
+
+      await (prisma as any).userLicense.updateMany({
+        where: { userId: id, organizationId: org.id },
+        data: {
+          ...(updateData.name ? { userName: updateData.name } : {}),
+          ...(updateData.mobile ? { userMobile: updateData.mobile } : {}),
+          ...(updateData.email ? { userEmail: updateData.email } : {}),
+        },
+      });
+
+      await recordAuditLog({
+        userId: session.user.id,
+        userEmail: session.user.email,
+        organizationId: org.id,
+        action: `Updated User Details: ${updatedUser.name}`,
+        relatedRecordId: id,
+        metadata: { targetUserId: id, updatedFields: Object.keys(updateData) },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `User details for '${updatedUser.name}' updated successfully.`,
+        user: updatedUser,
+      });
+    }
+
+    // 3. Backward Compatibility: Handle Legacy Role Change if passed
     if (roleId) {
       const platformRole = await (prisma as any).platformRole.findUnique({
         where: { id: roleId },
@@ -66,18 +193,8 @@ export async function PATCH(
         return NextResponse.json({ error: 'Selected role does not exist.' }, { status: 404 });
       }
 
-      if (!platformRole.active) {
-        return NextResponse.json(
-          { error: `The role '${platformRole.name}' is deactivated and cannot be assigned.` },
-          { status: 400 }
-        );
-      }
-
-      const previousRole = targetUser.assignedRoleName || 'Unassigned';
-      const newRole = platformRole.name;
       const newModules = platformRole.moduleKeys || [];
 
-      // Update User role and module permissions immediately
       const updatedUser = await prisma.user.update({
         where: { id },
         data: {
@@ -89,56 +206,27 @@ export async function PATCH(
           id: true,
           name: true,
           email: true,
-          assignedRoleId: true,
-          assignedRoleName: true,
           assignedModules: true,
         },
       });
 
-      // Update UserLicense record as well
       await (prisma as any).userLicense.updateMany({
         where: { userId: id, organizationId: org.id },
         data: {
           roleId: platformRole.id,
           roleName: platformRole.name,
           assignedModules: newModules,
-          designation: platformRole.name,
-        },
-      });
-
-      // Update Employee record designation
-      await prisma.employee.updateMany({
-        where: { userId: id, organizationId: org.id },
-        data: { designation: platformRole.name },
-      });
-
-      // Record Audit Log (Requirement 27)
-      await recordAuditLog({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        organizationId: org.id,
-        action: `Changed User Role: ${targetUser.name} (${previousRole} → ${newRole})`,
-        relatedRecordId: id,
-        metadata: {
-          targetUserId: id,
-          targetUserName: targetUser.name,
-          previousRole,
-          newRole,
-          organizationId: org.id,
-          changedBy: session.user.email,
-          newModules,
-          timestamp: new Date().toISOString(),
         },
       });
 
       return NextResponse.json({
         success: true,
-        message: `Role for '${targetUser.name}' updated to '${newRole}'. Module permissions updated successfully.`,
+        message: `User modules updated from '${platformRole.name}'.`,
         user: updatedUser,
       });
     }
 
-    // 2. Handle Status Toggle (ACTIVE / DISABLED)
+    // 4. Handle Status Toggle (ACTIVE / DISABLED)
     if (status) {
       if (!['ACTIVE', 'DISABLED'].includes(status)) {
         return NextResponse.json({ error: 'Invalid status. Must be ACTIVE or DISABLED.' }, { status: 400 });
@@ -195,8 +283,8 @@ export async function POST(
     }
 
     const session = await verifyDeviceSession(verified.sessionToken);
-    if (!session || (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN')) {
-      return NextResponse.json({ error: 'Forbidden: Organization Admin access required.' }, { status: 403 });
+    if (!session || (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN' && session.user.role !== 'OWNER')) {
+      return NextResponse.json({ error: 'Forbidden: Organization Admin or Owner access required.' }, { status: 403 });
     }
 
     const org = await getSessionOrganization(session.userId, session.user.organizationId);

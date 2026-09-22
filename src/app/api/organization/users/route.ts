@@ -6,6 +6,7 @@ import { PLATFORM_MODULES } from '@/lib/modulePermissions';
 import { recordAuditLog } from '@/lib/audit';
 import { sendEmail } from '@/lib/email';
 import { formatDateIndian } from '@/utils/dateUtils';
+import { calculateLicenseEligibility } from '@/lib/userLicensePricing';
 
 async function getSessionOrganization(userId: string, userOrgId?: string | null) {
   if (userOrgId) {
@@ -77,9 +78,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Session invalidated.' }, { status: 401 });
     }
 
-    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN') {
+    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN' && session.user.role !== 'OWNER') {
       return NextResponse.json(
-        { error: 'Forbidden: User Accounts are accessible only by Organization Administrators.' },
+        { error: 'Forbidden: User Accounts are accessible only by Organization Administrators or Company Owners.' },
         { status: 403 }
       );
     }
@@ -223,10 +224,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session invalidated.' }, { status: 401 });
     }
 
-    // Validation 3: ORG_ADMIN has permission
-    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN') {
+    // Validation 3: ORG_ADMIN or OWNER has permission
+    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN' && session.user.role !== 'OWNER') {
       return NextResponse.json(
-        { error: 'Forbidden: Creating user accounts is allowed only by Organization Administrators.' },
+        { error: 'Forbidden: Creating user accounts is allowed only by Organization Administrators or Company Owners.' },
         { status: 403 }
       );
     }
@@ -269,29 +270,23 @@ export async function POST(req: NextRequest) {
 
     // Validation 4: Purchased user-license capacity is available
     const capacity = await getOrganizationLicenseCapacity(org.id);
-    if (capacity.available <= 0) {
-      return NextResponse.json(
-        {
-          error: 'No user licenses are currently available. Purchase additional users to create another account.',
-          code: 'NO_LICENSES_AVAILABLE',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find the active purchase entitlement with remaining capacity to link expiry
-    const activePurchase =
-      capacity.activePurchases.find((p: any) => p.expiryDate && new Date(p.expiryDate) >= now) ||
-      capacity.activePurchases[0];
-
-    const licenseExpiryDate = activePurchase?.expiryDate
-      ? new Date(activePurchase.expiryDate)
-      : new Date(activeSub.endDate);
 
     const body = await req.json();
-    const { name, email, password, roleId, mobile } = body;
+    const {
+      name,
+      email,
+      password,
+      mobile,
+      assignedModules,
+      duration,
+      paymentMethod,
+      utr,
+      screenshotUrl,
+      billingDetails,
+      roleId,
+    } = body;
 
-    // Validation 8: User fields & email validation
+    // User field validations
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'User full name is required.' }, { status: 400 });
     }
@@ -332,52 +327,64 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validation 5 & 6: Selected role is active & valid
-    if (!roleId) {
-      return NextResponse.json({ error: 'Please select a predefined role for this user.' }, { status: 400 });
+    // Module Resolution (Direct Module Selection - Requirement 2)
+    let moduleKeys: string[] = [];
+    if (Array.isArray(assignedModules) && assignedModules.length > 0) {
+      moduleKeys = assignedModules;
+    } else if (roleId) {
+      const platformRole = await (prisma as any).platformRole.findUnique({ where: { id: roleId } });
+      if (platformRole) moduleKeys = platformRole.moduleKeys || [];
     }
 
-    const platformRole = await (prisma as any).platformRole.findUnique({
-      where: { id: roleId },
+    if (moduleKeys.length === 0) {
+      return NextResponse.json(
+        { error: 'Please select at least one module for this user account.' },
+        { status: 400 }
+      );
+    }
+
+    // Validate modules in database
+    const activePlatformModules = await (prisma as any).platformModule.findMany({
+      where: {
+        key: { in: moduleKeys },
+        active: true,
+      },
     });
 
-    if (!platformRole) {
-      return NextResponse.json({ error: 'Selected role does not exist.' }, { status: 404 });
+    if (activePlatformModules.length === 0) {
+      return NextResponse.json(
+        { error: 'The selected modules are inactive or invalid. Cannot create user license.' },
+        { status: 400 }
+      );
     }
 
-    if (!platformRole.active) {
+    const validModuleKeys = activePlatformModules.map((m: any) => m.key);
+    const durationNum = [3, 6, 12].includes(Number(duration)) ? Number(duration) : 3;
+
+    // Server-Side Subscription Expiry & Pricing Calculation (Requirements 3, 4, 5)
+    const eligibility = await calculateLicenseEligibility(org.id, durationNum, 1, validModuleKeys);
+
+    if (!eligibility.hasActiveSubscription) {
       return NextResponse.json(
         {
-          error: `The role '${platformRole.name}' has been deactivated by Super Admin and cannot be assigned.`,
+          error:
+            eligibility.warningMessage ||
+            'Your organization must have an active main subscription to purchase additional user licenses.',
         },
         { status: 400 }
       );
     }
 
-    // Validation 7: Selected modules are valid
-    const assignedModuleKeys = platformRole.moduleKeys || [];
-    if (assignedModuleKeys.length === 0) {
-      return NextResponse.json({ error: 'Selected role does not contain any assigned modules.' }, { status: 400 });
+    if (!eligibility.actualExpiryDate) {
+      return NextResponse.json({ error: 'Could not resolve license validity window.' }, { status: 400 });
     }
 
-    const platformModules = await (prisma as any).platformModule.findMany({
-      where: {
-        key: { in: assignedModuleKeys },
-        active: true,
-      },
-    });
+    const licenseExpiryDate = new Date(eligibility.actualExpiryDate);
 
-    if (platformModules.length === 0) {
-      return NextResponse.json(
-        { error: 'All modules in this role are currently inactive. Cannot create account.' },
-        { status: 400 }
-      );
-    }
-
-    // Securely hash the initial password with bcrypt (NEVER store plaintext)
+    // Hash password with bcrypt securely
     const hashedPassword = await hashPassword(password);
 
-    // Create or find employee in organization for attendance association
+    // Create or find employee in organization
     let employee = await prisma.employee.findFirst({
       where: { organizationId: org.id, email: cleanEmail },
     });
@@ -392,14 +399,143 @@ export async function POST(req: NextRequest) {
           name: name.trim(),
           mobile: mobile ? mobile.trim() : '9876543210',
           email: cleanEmail,
-          designation: platformRole.name,
-          department: 'Operations',
+          designation: 'Staff',
+          department: 'General',
           status: 'ACTIVE',
         },
       });
     }
 
-    // Create the User account
+    const hasUtr = Boolean(utr && utr.trim());
+    const hasCapacity = capacity.available > 0;
+
+    if (!hasUtr && !hasCapacity) {
+      return NextResponse.json(
+        {
+          error:
+            'Please provide payment transaction reference (UTR) to purchase a license for this user, or ensure you have available user license capacity.',
+          code: 'PAYMENT_REQUIRED',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (hasUtr) {
+      // 1. Direct License Purchase Flow with Selected Modules (PENDING Super Admin approval)
+      const userLicense = await (prisma as any).userLicense.create({
+        data: {
+          organizationId: org.id,
+          userName: name.trim(),
+          userMobile: mobile ? mobile.trim() : '9876543210',
+          userEmail: cleanEmail,
+          designation: 'Staff',
+          department: 'General',
+          duration: durationNum,
+          price: eligibility.totalPayable,
+          startDate: null, // Activated upon Super Admin approval
+          expiryDate: licenseExpiryDate,
+          paymentStatus: 'PENDING',
+          status: 'PENDING_PAYMENT',
+          paymentMethod: paymentMethod || 'UPI',
+          utr: utr.trim(),
+          screenshotUrl: screenshotUrl || null,
+          billingDetails: billingDetails || null,
+          assignedModules: validModuleKeys,
+          modulePricingSnapshot: eligibility,
+          initialPasswordHash: hashedPassword,
+          paymentType: 'USER_LICENSE',
+        },
+      });
+
+      // Create or stage the user account in DISABLED state until payment approved
+      let createdUser;
+      if (existingUser) {
+        createdUser = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            name: name.trim(),
+            mobile: mobile ? mobile.trim() : existingUser.mobile,
+            password: hashedPassword,
+            role: 'USER',
+            organizationId: org.id,
+            isAdditionalUser: true,
+            assignedModules: validModuleKeys,
+            userLicenseId: userLicense.id,
+            emailVerified: true,
+            status: 'DISABLED',
+            mustChangePassword: true,
+          },
+        });
+      } else {
+        createdUser = await prisma.user.create({
+          data: {
+            name: name.trim(),
+            email: cleanEmail,
+            mobile: mobile ? mobile.trim() : '9876543210',
+            company: org.name,
+            password: hashedPassword,
+            role: 'USER',
+            organizationId: org.id,
+            isAdditionalUser: true,
+            assignedModules: validModuleKeys,
+            userLicenseId: userLicense.id,
+            emailVerified: true,
+            status: 'DISABLED',
+            mustChangePassword: true,
+          },
+        });
+      }
+
+      await (prisma as any).userLicense.update({
+        where: { id: userLicense.id },
+        data: { userId: createdUser.id, employeeId: employee.id },
+      });
+
+      await prisma.employee.update({
+        where: { id: employee.id },
+        data: { userId: createdUser.id },
+      });
+
+      await recordAuditLog({
+        userId: session.user.id,
+        userEmail: session.user.email,
+        organizationId: org.id,
+        action: `Submitted User License: ${name.trim()} (${validModuleKeys.length} Modules, ₹${eligibility.totalPayable}, UTR: ${utr.trim()})`,
+        relatedRecordId: userLicense.id,
+        metadata: {
+          userName: name.trim(),
+          userEmail: cleanEmail,
+          assignedModules: validModuleKeys,
+          duration: durationNum,
+          totalPayable: eligibility.totalPayable,
+          isProrated: eligibility.isProrated,
+          utr: utr.trim(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `User license for '${name.trim()}' submitted successfully with ${validModuleKeys.length} selected module(s) (₹${eligibility.totalPayable.toLocaleString('en-IN')}). Awaiting Super Admin payment verification.`,
+        user: {
+          id: createdUser.id,
+          name: createdUser.name,
+          email: createdUser.email,
+          assignedModules: validModuleKeys,
+          status: 'PENDING_APPROVAL',
+        },
+        license: userLicense,
+      });
+    }
+
+    // 2. Existing Capacity Flow: Use pre-paid slot and immediately activate
+    const activePurchase =
+      capacity.activePurchases.find((p: any) => p.expiryDate && new Date(p.expiryDate) >= now) ||
+      capacity.activePurchases[0];
+
+    const activeExpiry = activePurchase?.expiryDate
+      ? new Date(activePurchase.expiryDate)
+      : licenseExpiryDate;
+
     let createdUser;
     if (existingUser) {
       createdUser = await prisma.user.update({
@@ -411,9 +547,7 @@ export async function POST(req: NextRequest) {
           role: 'USER',
           organizationId: org.id,
           isAdditionalUser: true,
-          assignedRoleId: platformRole.id,
-          assignedRoleName: platformRole.name,
-          assignedModules: assignedModuleKeys,
+          assignedModules: validModuleKeys,
           emailVerified: true,
           status: 'ACTIVE',
           mustChangePassword: true,
@@ -430,9 +564,7 @@ export async function POST(req: NextRequest) {
           role: 'USER',
           organizationId: org.id,
           isAdditionalUser: true,
-          assignedRoleId: platformRole.id,
-          assignedRoleName: platformRole.name,
-          assignedModules: assignedModuleKeys,
+          assignedModules: validModuleKeys,
           emailVerified: true,
           status: 'ACTIVE',
           mustChangePassword: true,
@@ -440,13 +572,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Link employee to user
     await prisma.employee.update({
       where: { id: employee.id },
       data: { userId: createdUser.id },
     });
 
-    // Create UserLicense record linked to active purchase
     const userLicense = await (prisma as any).userLicense.create({
       data: {
         organizationId: org.id,
@@ -455,29 +585,25 @@ export async function POST(req: NextRequest) {
         userName: name.trim(),
         userMobile: mobile ? mobile.trim() : '9876543210',
         userEmail: cleanEmail,
-        designation: platformRole.name,
-        department: 'Operations',
-        duration: activePurchase?.durationSelected || 3,
-        price: activePurchase?.pricePerUser || 0,
+        designation: 'Staff',
+        department: 'General',
+        duration: activePurchase?.durationSelected || durationNum,
+        price: activePurchase?.pricePerUser || eligibility.totalPayable,
         startDate: now,
-        expiryDate: licenseExpiryDate,
+        expiryDate: activeExpiry,
         paymentStatus: 'APPROVED',
         status: 'ACTIVE',
-        roleId: platformRole.id,
-        roleName: platformRole.name,
-        assignedModules: assignedModuleKeys,
+        assignedModules: validModuleKeys,
         purchaseId: activePurchase?.id || null,
         paymentType: 'USER_LICENSE',
       },
     });
 
-    // Link user to license
     await prisma.user.update({
       where: { id: createdUser.id },
       data: { userLicenseId: userLicense.id },
     });
 
-    // Send User Credentials Email via SMTP
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const emailResult = await sendEmail({
       to: cleanEmail,
@@ -486,26 +612,24 @@ export async function POST(req: NextRequest) {
         name: createdUser.name,
         companyName: org.name,
         loginEmail: cleanEmail,
-        assignedRole: platformRole.name,
-        assignedModules: platformModules.map((m: any) => m.name).join(', '),
-        expiryDate: formatDateIndian(licenseExpiryDate),
+        assignedRole: 'Employee',
+        assignedModules: activePlatformModules.map((m: any) => m.name).join(', '),
+        expiryDate: formatDateIndian(activeExpiry),
         loginUrl: `${appUrl}/login`,
       },
     });
 
-    // Record Audit Log
     await recordAuditLog({
       userId: session.user.id,
       userEmail: session.user.email,
       organizationId: org.id,
-      action: `Created User Account: ${name.trim()} (${platformRole.name})`,
+      action: `Created User Account with Modules: ${name.trim()} (${validModuleKeys.join(', ')})`,
       relatedRecordId: createdUser.id,
       metadata: {
         userName: name.trim(),
         userEmail: cleanEmail,
-        roleName: platformRole.name,
-        assignedModules: assignedModuleKeys,
-        expiryDate: licenseExpiryDate.toISOString(),
+        assignedModules: validModuleKeys,
+        expiryDate: activeExpiry.toISOString(),
         emailSent: emailResult.success,
       },
     });
@@ -514,14 +638,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `User account '${name.trim()}' created successfully with role '${platformRole.name}'. Credential email sent to ${cleanEmail}.`,
+      message: `User account '${name.trim()}' created successfully with ${validModuleKeys.length} assigned modules.`,
       user: {
         id: createdUser.id,
         name: createdUser.name,
         email: createdUser.email,
-        roleName: platformRole.name,
-        assignedModules: assignedModuleKeys,
-        expiryDate: licenseExpiryDate,
+        assignedModules: validModuleKeys,
+        expiryDate: activeExpiry,
       },
       licenseCapacity: updatedCapacity,
       emailSent: emailResult.success,

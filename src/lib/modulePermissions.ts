@@ -101,6 +101,14 @@ export const PLATFORM_MODULES: Record<string, ModuleDefinition> = {
     defaultPrice: 500,
     routes: ['/dashboard/payroll'],
   },
+  COUNTER_CASH_LEDGER: {
+    key: 'COUNTER_CASH_LEDGER',
+    name: 'Counter Cash Ledger',
+    description: 'Daily office & counter cash register, receipts, payments, and bank deposits',
+    category: 'ORGANIZATION',
+    defaultPrice: 399,
+    routes: ['/dashboard/cash-ledger'],
+  },
   PACKAGING_SHOP: {
     key: 'PACKAGING_SHOP',
     name: 'Cargo Packaging Shop',
@@ -139,19 +147,23 @@ export const DEFAULT_PREDEFINED_ROLES = [
  */
 export async function ensurePlatformModulesAndRolesSeeded() {
   try {
-    // 1. Seed modules if none exist
-    const moduleCount = await (prisma as any).platformModule.count();
-    if (moduleCount === 0) {
-      for (const mod of Object.values(PLATFORM_MODULES)) {
-        await (prisma as any).platformModule.upsert({
-          where: { key: mod.key },
-          update: {},
-          create: {
+    // 1. Seed or ensure all platform modules exist
+    for (const mod of Object.values(PLATFORM_MODULES)) {
+      const existing = await (prisma as any).platformModule.findUnique({
+        where: { key: mod.key },
+      });
+      if (!existing) {
+        const m = mod.defaultPrice;
+        await (prisma as any).platformModule.create({
+          data: {
             key: mod.key,
             name: mod.name,
             description: mod.description,
             category: mod.category,
-            monthlyPrice: mod.defaultPrice,
+            monthlyPrice: m,
+            price3Months: Math.round(m * 3 * 0.95),
+            price6Months: Math.round(m * 6 * 0.9),
+            price12Months: Math.round(m * 12 * 0.8),
             active: true,
           },
         });
@@ -308,16 +320,36 @@ export async function verifyModuleAccess(
     }
   }
 
+  // If a specific platform module is required, check if it is active in the module catalogue
+  if (requiredModuleKey) {
+    const platformMod = await (prisma as any).platformModule.findUnique({
+      where: { key: requiredModuleKey },
+      select: { active: true, name: true },
+    });
+    if (platformMod && !platformMod.active) {
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          {
+            error: `Forbidden: The '${platformMod.name || requiredModuleKey}' module has been deactivated by the platform administrator.`,
+            code: 'MODULE_DISABLED',
+          },
+          { status: 403 }
+        ),
+      };
+    }
+  }
+
   // Check OWNER role restrictions:
-  // Customer OWNER does NOT receive Organization Admin management features (Employees, Attendance Admin, Payroll, User Accounts)
-  const ORG_ADMIN_MODULES = ['EMPLOYEE_MANAGEMENT', 'ATTENDANCE', 'PAYROLL', 'USER_ACCOUNTS'];
+  // Customer OWNER does NOT receive Organization Admin management features (Employees, Attendance Admin, Payroll)
+  const ORG_ADMIN_MODULES = ['EMPLOYEE_MANAGEMENT', 'ATTENDANCE', 'PAYROLL'];
   if (user.role === 'OWNER' && requiredModuleKey && ORG_ADMIN_MODULES.includes(requiredModuleKey)) {
     return {
       authorized: false,
       response: NextResponse.json(
         {
           error:
-            'Forbidden: Organization administration (Employee Management, Attendance Register, Payroll, and User Accounts) is available exclusively through your Organization Admin (ORG_ADMIN) account.',
+            'Forbidden: Organization administration (Employee Management, Attendance Register, and Payroll) is available exclusively through your Organization Admin (ORG_ADMIN) account.',
           code: 'ORG_ADMIN_REQUIRED',
         },
         { status: 403 }
@@ -377,7 +409,7 @@ export async function verifyModuleAccess(
       };
     }
 
-    // 4. Role Module permission check
+    // 4. Module permission check
     if (requiredModuleKey) {
       const assigned = user.assignedModules || [];
       if (!assigned.includes(requiredModuleKey)) {
@@ -386,7 +418,7 @@ export async function verifyModuleAccess(
           authorized: false,
           response: NextResponse.json(
             {
-              error: `Forbidden: You do not have permission to access the '${modName}' module. Your assigned role does not include this module.`,
+              error: `Forbidden: You do not have permission to access the '${modName}' module. This module is not assigned to your user account.`,
               code: 'MODULE_ACCESS_DENIED',
             },
             { status: 403 }

@@ -1455,3 +1455,258 @@ export async function exportSalarySlipPDF(
   doc.save(filename);
 }
 
+export interface CashLedgerExportOptions {
+  entries: any[];
+  columns: any[];
+  summary: {
+    initialCashInHand?: number;
+    totalCashReceived: number;
+    totalPaidAmount: number;
+    totalBankDeposit: number;
+    currentCashInHand: number;
+    entryCount?: number;
+  };
+  organizationName?: string;
+  filterDescription?: string;
+}
+
+export async function exportCashLedgerToPDF(options: CashLedgerExportOptions) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const { jsPDF } = await import('jspdf');
+    // Use Landscape A4 for wide multi-column ledger view
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const pageWidth = 297;
+    const pageHeight = 210;
+
+    const primaryColor = [15, 76, 58]; // #0F4C3A
+    const textDark = [28, 46, 36];
+    const textMuted = [100, 116, 139];
+
+    // 1. Header Banner
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(0, 0, pageWidth, 28, 'F');
+
+    // Organization & Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text((options.organizationName || 'GEO TRANSIT ORGANIZATION').toUpperCase(), 14, 12);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(200, 230, 220);
+    doc.text('COUNTER CASH LEDGER — DAILY OFFICE CASH REGISTER', 14, 20);
+
+    // Meta Right
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`PERIOD: ${(options.filterDescription || 'ALL TRANSACTIONS').toUpperCase()}`, pageWidth - 14, 12, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(200, 230, 220);
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, pageWidth - 14, 20, { align: 'right' });
+
+    // 2. Summary KPI Cards
+    let curY = 33;
+    const cardW = (pageWidth - 28 - 9) / 4;
+    const cardH = 14;
+
+    const kpis = [
+      { label: 'TOTAL CASH RECEIVED', val: `INR ${options.summary.totalCashReceived.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: [16, 185, 129] },
+      { label: 'TOTAL PAID AMOUNT', val: `INR ${options.summary.totalPaidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: [239, 68, 68] },
+      { label: 'TOTAL BANK DEPOSIT', val: `INR ${options.summary.totalBankDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: [59, 130, 246] },
+      { label: 'CURRENT CASH IN HAND', val: `INR ${options.summary.currentCashInHand.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, color: [15, 76, 58] },
+    ];
+
+    kpis.forEach((kpi, idx) => {
+      const x = 14 + idx * (cardW + 3);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(x, curY, cardW, cardH, 2, 2, 'FD');
+
+      // Accent border bar
+      doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+      doc.rect(x, curY, 2.5, cardH, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+      doc.text(kpi.label, x + 5, curY + 5);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.text(kpi.val, x + 5, curY + 11);
+    });
+
+    curY += cardH + 6;
+
+    // 3. Table Column Setup
+    const activeCols = (options.columns || []).filter((c: any) => c.enabled !== false);
+    const visibleCols = activeCols.length > 0 ? activeCols : [
+      { key: 'date', name: 'Date', width: 22 },
+      { key: 'cashReceived', name: 'Cash Received', width: 28 },
+      { key: 'receivedFrom', name: 'Received From', width: 34 },
+      { key: 'purpose', name: 'Purpose', width: 42 },
+      { key: 'paidTo', name: 'Paid To', width: 34 },
+      { key: 'paidAmount', name: 'Paid Amount', width: 28 },
+      { key: 'bankDeposit', name: 'Bank Deposit', width: 28 },
+      { key: 'cashInHand', name: 'Cash in Hand', width: 28 },
+      { key: 'remarks', name: 'Remarks', width: 25 },
+    ];
+
+    const totalTableWidth = pageWidth - 28;
+    const colWidth = Math.floor(totalTableWidth / visibleCols.length);
+
+    // Header Row
+    doc.setFillColor(241, 245, 249);
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(14, curY, totalTableWidth, 8, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+
+    visibleCols.forEach((col: any, idx: number) => {
+      const x = 14 + idx * colWidth;
+      const title = (col.name || col.key || '').toUpperCase();
+      doc.text(title.length > 18 ? title.slice(0, 16) + '..' : title, x + 2, curY + 5.5);
+    });
+
+    curY += 8;
+
+    // 4. Data Rows
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+
+    if (options.entries.length === 0) {
+      doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+      doc.text('No ledger entries recorded for the selected period.', 14, curY + 8);
+    } else {
+      options.entries.forEach((row: any, rowIdx: number) => {
+        // Page overflow check
+        if (curY > pageHeight - 20) {
+          doc.addPage();
+          curY = 16;
+          // Re-draw table header
+          doc.setFillColor(241, 245, 249);
+          doc.setDrawColor(203, 213, 225);
+          doc.rect(14, curY, totalTableWidth, 8, 'FD');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(51, 65, 85);
+          visibleCols.forEach((col: any, idx: number) => {
+            const x = 14 + idx * colWidth;
+            doc.text((col.name || '').toUpperCase(), x + 2, curY + 5.5);
+          });
+          curY += 8;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7);
+        }
+
+        // Alternating row background
+        if (rowIdx % 2 === 1) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(14, curY, totalTableWidth, 7, 'F');
+        }
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(14, curY + 7, 14 + totalTableWidth, curY + 7);
+
+        visibleCols.forEach((col: any, cIdx: number) => {
+          const x = 14 + cIdx * colWidth;
+          let cellVal = '';
+
+          if (col.key === 'date') {
+            cellVal = row.date ? new Date(row.date).toLocaleDateString('en-IN') : '-';
+          } else if (['cashReceived', 'paidAmount', 'bankDeposit', 'cashInHand'].includes(col.key)) {
+            const num = Number(row[col.key]) || 0;
+            cellVal = num > 0 || col.key === 'cashInHand' ? num.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-';
+          } else if (row[col.key] !== undefined && row[col.key] !== null) {
+            cellVal = String(row[col.key]);
+          } else if (row.customFields && row.customFields[col.key] !== undefined) {
+            cellVal = String(row.customFields[col.key]);
+          }
+
+          if (cellVal.length > 20) cellVal = cellVal.slice(0, 18) + '..';
+
+          // Financial numbers styled bolder
+          if (['cashReceived', 'paidAmount', 'bankDeposit', 'cashInHand'].includes(col.key)) {
+            doc.setFont('helvetica', 'bold');
+            if (col.key === 'cashReceived' && Number(row[col.key]) > 0) {
+              doc.setTextColor(16, 185, 129);
+            } else if (col.key === 'paidAmount' && Number(row[col.key]) > 0) {
+              doc.setTextColor(220, 38, 38);
+            } else if (col.key === 'bankDeposit' && Number(row[col.key]) > 0) {
+              doc.setTextColor(37, 99, 235);
+            } else {
+              doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+            }
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+          }
+
+          doc.text(cellVal, x + 2, curY + 4.8);
+        });
+
+        curY += 7;
+      });
+    }
+
+    // Footer
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text('Confidential Document • Generated by GEO TRANSIT Counter Cash Ledger System', 14, pageHeight - 8);
+    doc.text(`Page 1`, pageWidth - 14, pageHeight - 8, { align: 'right' });
+
+    const safeOrg = (options.organizationName || 'Org').replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`CashLedger_${safeOrg}_${Date.now()}.pdf`);
+  } catch (err) {
+    console.error('Error generating Cash Ledger PDF:', err);
+  }
+}
+
+export function exportCashLedgerToCSV(options: CashLedgerExportOptions) {
+  if (typeof window === 'undefined') return;
+
+  const activeCols = (options.columns || []).filter((c: any) => c.enabled !== false);
+  const headers = activeCols.map((c: any) => `"${(c.name || c.key).replace(/"/g, '""')}"`);
+
+  const rows = options.entries.map((entry) => {
+    return activeCols.map((col: any) => {
+      let val = '';
+      if (col.key === 'date') {
+        val = entry.date ? new Date(entry.date).toLocaleDateString('en-IN') : '';
+      } else if (entry[col.key] !== undefined && entry[col.key] !== null) {
+        val = String(entry[col.key]);
+      } else if (entry.customFields && entry.customFields[col.key] !== undefined) {
+        val = String(entry.customFields[col.key]);
+      }
+      return `"${val.replace(/"/g, '""')}"`;
+    }).join(',');
+  });
+
+  // Summary lines at bottom
+  const summaryRows = [
+    '',
+    `"SUMMARY TOTALS"`,
+    `"Total Cash Received","${options.summary.totalCashReceived}"`,
+    `"Total Paid Amount","${options.summary.totalPaidAmount}"`,
+    `"Total Bank Deposit","${options.summary.totalBankDeposit}"`,
+    `"Closing Cash in Hand","${options.summary.currentCashInHand}"`,
+  ];
+
+  const csvContent = [headers.join(','), ...rows, ...summaryRows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `CashLedger_${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}

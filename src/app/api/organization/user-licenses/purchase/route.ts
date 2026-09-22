@@ -32,9 +32,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session invalidated.' }, { status: 401 });
     }
 
-    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN') {
+    if (session.user.role !== 'ORG_ADMIN' && session.user.role !== 'ADMIN' && session.user.role !== 'OWNER') {
       return NextResponse.json(
-        { error: 'Forbidden: Purchasing user licenses is allowed only by Organization Administrators.' },
+        { error: 'Forbidden: Purchasing user licenses is allowed only by Organization Administrators or Company Owners.' },
         { status: 403 }
       );
     }

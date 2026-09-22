@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Package,
   UserCheck,
+  WalletCards,
 } from 'lucide-react';
 import LogisticsEcosystemVisual from '@/components/logistics/LogisticsEcosystemVisual';
 import ShipmentIntelligenceVisual from '@/components/logistics/ShipmentIntelligenceVisual';
@@ -53,18 +54,33 @@ export default function DashboardHome() {
 
   const { user } = data || {};
   const isDemo = user?.isDemo;
+  const activeModuleKeys = user?.activeModuleKeys || [];
+  const assignedModules = user?.assignedModules || [];
+  const isAdditionalUser = Boolean(user?.isAdditionalUser);
 
-  const quickActions = [
-    { title: 'Weight Calculator', desc: 'Compute raw and volumetric cargo weights', path: '/dashboard/calculator', icon: Scale },
-    { title: 'Rate Calculator', desc: 'Compare contract rates across system and custom slabs', path: '/dashboard/rate-calculator', icon: Calculator },
-    { title: 'Calculation History', desc: 'View and export recent cargo weight evaluations', path: '/dashboard/history', icon: History },
-    { title: 'Quotations', desc: 'Manage generated client quotes and invoices', path: '/dashboard/quotations', icon: FileText },
-    { title: 'Sales Follow-Up', desc: 'Track customer leads, quotes & follow-up actions', path: '/dashboard/sales-follow-up', icon: UserCheck },
+  const rawQuickActions = [
+    { title: 'Weight Calculator', desc: 'Compute raw and volumetric cargo weights', path: '/dashboard/calculator', icon: Scale, moduleKey: 'WEIGHT_CALCULATOR' },
+    { title: 'Rate Calculator', desc: 'Compare contract rates across system and custom slabs', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
+    { title: 'Counter Cash Ledger', desc: 'Daily office & counter cash register, receipts, and bank deposits', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
+    { title: 'Calculation History', desc: 'View and export recent cargo weight evaluations', path: '/dashboard/history', icon: History, moduleKey: 'CALCULATION_HISTORY' },
+    { title: 'Quotations', desc: 'Manage generated client quotes and invoices', path: '/dashboard/quotations', icon: FileText, moduleKey: 'QUOTATIONS' },
+    { title: 'Sales Follow-Up', desc: 'Track customer leads, quotes & follow-up actions', path: '/dashboard/sales-follow-up', icon: UserCheck, moduleKey: 'SALES_FOLLOW_UP' },
     { title: 'Subscriptions', desc: 'Upgrade or renew active portal credentials', path: '/dashboard/subscriptions', icon: CreditCard },
     { title: 'My Devices', desc: 'Track and manage active client sessions', path: '/dashboard/devices', icon: Smartphone },
-    { title: 'Tracking Portal', desc: 'Quickly access carrier tracking systems', path: '/dashboard/tracking', icon: Navigation },
-    { title: 'Pincode Lookup', desc: 'Verify origin and destination location serviceability', path: '/dashboard/pincode-serviceability', icon: MapPin },
+    { title: 'Tracking Portal', desc: 'Quickly access carrier tracking systems', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
+    { title: 'Pincode Lookup', desc: 'Verify origin and destination location serviceability', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
   ];
+
+  const quickActions = rawQuickActions.filter((action) => {
+    if (!action.moduleKey) return true; // General actions
+    if (activeModuleKeys.length > 0 && !activeModuleKeys.includes(action.moduleKey)) {
+      return false;
+    }
+    if (isAdditionalUser) {
+      return assignedModules.includes(action.moduleKey);
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6">

@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Execute active device count, rate card counts, and access status in parallel
-    const [activeDevices, customRateCardsCount, systemRateCardsCount, accessStatus] = await Promise.all([
+    // Execute active device count, rate card counts, access status, and active platform modules in parallel
+    const [activeDevices, customRateCardsCount, systemRateCardsCount, accessStatus, activePlatformModules] = await Promise.all([
       user.organizationId
         ? prisma.deviceSession.count({
             where: {
@@ -71,7 +71,13 @@ export async function GET(req: NextRequest) {
         },
       }),
       getUserAccessState(user.id, user),
+      (prisma as any).platformModule.findMany({
+        where: { active: true },
+        select: { key: true },
+      }),
     ]);
+
+    const activeModuleKeys = (activePlatformModules || []).map((m: any) => m.key);
 
     const isDemo = !activeSubscription && user.role !== 'ADMIN';
 
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest) {
       calculationsLimit: isDemo ? 10 : 99999,
       rateCardsLimit: isDemo ? 10 : (activeSubscription?.customRateCardLimit ?? 50),
       accessStatus,
+      activeModuleKeys,
     };
 
     return NextResponse.json({

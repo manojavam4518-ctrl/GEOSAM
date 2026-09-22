@@ -102,15 +102,33 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Legacy fallback: Check if targetId is an individual UserLicense record
+    // 2. Individual UserLicense record approval
     const license = await (prisma as any).userLicense.findUnique({
       where: { id: targetId },
       include: { organization: true },
     });
 
     if (license) {
+      const activeSub = await prisma.subscription.findFirst({
+        where: {
+          OR: [{ organizationId: license.organizationId }, { userId: license.organization.ownerId }],
+          status: 'ACTIVE',
+          endDate: { gte: now },
+        },
+        orderBy: { endDate: 'desc' },
+      });
+
+      if (!activeSub) {
+        return NextResponse.json(
+          { error: 'Cannot approve license: Organization does not have an active main subscription.' },
+          { status: 400 }
+        );
+      }
+
+      const orgSubExpiry = new Date(activeSub.endDate);
       const daysToAdd = license.duration * 30;
-      const finalExpiry = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+      const expectedExpiry = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+      const finalExpiry = expectedExpiry.getTime() > orgSubExpiry.getTime() ? orgSubExpiry : expectedExpiry;
 
       const updatedLicense = await (prisma as any).userLicense.update({
         where: { id: targetId },
@@ -123,17 +141,35 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Activate user account and synchronize assigned modules
+      if (license.userId) {
+        await prisma.user.update({
+          where: { id: license.userId },
+          data: {
+            status: 'ACTIVE',
+            assignedModules: license.assignedModules || [],
+          },
+        });
+      }
+
       await recordAuditLog({
         adminId: session.user.id,
         adminEmail: session.user.email,
         organizationId: license.organizationId,
-        action: `Approved User License for ${license.userName} (${license.roleName})`,
+        action: `Approved User License for ${license.userName} (Modules: ${(license.assignedModules || []).join(', ')})`,
         relatedRecordId: license.id,
+        metadata: {
+          userName: license.userName,
+          userEmail: license.userEmail,
+          assignedModules: license.assignedModules,
+          startDate: now.toISOString(),
+          expiryDate: finalExpiry.toISOString(),
+        },
       });
 
       return NextResponse.json({
         success: true,
-        message: `User license for '${license.userName}' approved successfully.`,
+        message: `User license for '${license.userName}' approved successfully. Valid until ${finalExpiry.toLocaleDateString('en-IN')}.`,
         license: updatedLicense,
       });
     }

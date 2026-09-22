@@ -46,9 +46,23 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const duration = parseInt(searchParams.get('duration') || '3', 10);
     const usersCount = parseInt(searchParams.get('usersCount') || '1', 10);
+    const modulesParam = searchParams.get('modules');
+
+    let parsedModules: string[] = [];
+    if (modulesParam) {
+      try {
+        if (modulesParam.startsWith('[')) {
+          parsedModules = JSON.parse(modulesParam);
+        } else {
+          parsedModules = modulesParam.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      } catch {
+        parsedModules = modulesParam.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
 
     const [eligibility, allPricings] = await Promise.all([
-      calculateLicenseEligibility(org.id, duration, usersCount),
+      calculateLicenseEligibility(org.id, duration, usersCount, parsedModules),
       getAllUserLicensePricings(),
     ]);
 

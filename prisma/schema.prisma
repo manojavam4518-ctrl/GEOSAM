@@ -31,6 +31,8 @@ model Organization {
   userLicenses   UserLicense[]
   userLicensePurchases UserLicensePurchase[]
   subscriptions  Subscription[]
+  cashLedgerConfig CashLedgerConfig?
+  cashLedgerEntries CashLedgerEntry[]
 }
 
 model User {
@@ -830,15 +832,18 @@ model UserLicensePurchase {
 }
 
 model PlatformModule {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  key          String   @unique
-  name         String
-  description  String?
-  category     String   // LOGISTICS, ORGANIZATION, SHOPPING
-  monthlyPrice Float    @default(0.0)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  key           String   @unique
+  name          String
+  description   String?
+  category      String   // LOGISTICS, ORGANIZATION, SHOPPING
+  monthlyPrice  Float    @default(0.0)
+  price3Months  Float    @default(0.0)
+  price6Months  Float    @default(0.0)
+  price12Months Float    @default(0.0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model PlatformRole {
@@ -851,4 +856,36 @@ model PlatformRole {
   updatedAt   DateTime @updatedAt
 }
 
+model CashLedgerConfig {
+  id                String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId    String       @unique @db.ObjectId
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  columns           Json?        // Array of column definitions
+  initialCashInHand Float        @default(0.0)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+}
 
+model CashLedgerEntry {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById    String?      @db.ObjectId
+  createdByName  String?
+  date           DateTime     @default(now())
+  cashReceived   Float        @default(0.0)
+  receivedFrom   String?
+  purpose        String?
+  paidTo         String?
+  paidAmount     Float        @default(0.0)
+  bankDeposit    Float        @default(0.0)
+  cashInHand     Float        @default(0.0)
+  remarks        String?
+  customFields   Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([date])
+  @@index([organizationId, date])
+}
