@@ -1495,11 +1495,11 @@ function CalculatorContent() {
                   {divisorTab === 'DEFAULT' && (
                     <div className="w-full space-y-2.5 animate-fade-in">
                       {serviceType === 'DOMESTIC' ? (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 md:gap-4 w-full">
+                        <div className="grid grid-cols-4 gap-2 sm:gap-2.5 md:gap-3 w-full sm:max-w-[80%]">
                           {/* 4000 SURFACE MODE */}
                           <div
                             onClick={() => setDivisorMode('4000')}
-                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                            className={`p-2 sm:p-2.5 md:p-2.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
                               divisorMode === '4000'
                                 ? isDark
                                   ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
@@ -1518,7 +1518,7 @@ function CalculatorContent() {
                               <span>SURFACE</span>
                               <span>MODE</span>
                             </div>
-                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                            <div className="mt-1.5 sm:mt-2 flex items-center justify-center shrink-0">
                               <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                                 divisorMode === '4000'
                                   ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
@@ -1536,7 +1536,7 @@ function CalculatorContent() {
                           {/* 4500 AIR MODE */}
                           <div
                             onClick={() => setDivisorMode('4500')}
-                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                            className={`p-2 sm:p-2.5 md:p-2.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
                               divisorMode === '4500'
                                 ? isDark
                                   ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
@@ -1555,7 +1555,7 @@ function CalculatorContent() {
                               <span>AIR</span>
                               <span>MODE</span>
                             </div>
-                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                            <div className="mt-1.5 sm:mt-2 flex items-center justify-center shrink-0">
                               <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                                 divisorMode === '4500'
                                   ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
@@ -1573,7 +1573,7 @@ function CalculatorContent() {
                           {/* 5000 AIR CARGO */}
                           <div
                             onClick={() => setDivisorMode('5000')}
-                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                            className={`p-2 sm:p-2.5 md:p-2.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
                               divisorMode === '5000'
                                 ? isDark
                                   ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
@@ -1592,7 +1592,7 @@ function CalculatorContent() {
                               <span>AIR</span>
                               <span>CARGO</span>
                             </div>
-                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                            <div className="mt-1.5 sm:mt-2 flex items-center justify-center shrink-0">
                               <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                                 divisorMode === '5000'
                                   ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
@@ -1610,7 +1610,7 @@ function CalculatorContent() {
                           {/* CUSTOM DIVISOR */}
                           <div
                             onClick={() => setDivisorMode('CUSTOM')}
-                            className={`p-2.5 sm:p-3 md:p-3.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
+                            className={`p-2 sm:p-2.5 md:p-2.5 border rounded-xl cursor-pointer transition flex flex-col items-center justify-between text-center w-full min-w-0 box-border ${
                               divisorMode === 'CUSTOM'
                                 ? isDark
                                   ? 'border-2 border-emerald-400 bg-[#103A2D] text-emerald-300 shadow-xs font-bold'
@@ -1629,7 +1629,7 @@ function CalculatorContent() {
                               <span>DIVISOR</span>
                               <span className="opacity-0 select-none text-[8px] leading-none hidden sm:inline">&nbsp;</span>
                             </div>
-                            <div className="mt-2.5 flex items-center justify-center shrink-0">
+                            <div className="mt-1.5 sm:mt-2 flex items-center justify-center shrink-0">
                               <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                                 divisorMode === 'CUSTOM'
                                   ? isDark ? 'border-emerald-400 bg-[#103A2D]' : 'border-[#107c5a] bg-[#f0f7f4]'
