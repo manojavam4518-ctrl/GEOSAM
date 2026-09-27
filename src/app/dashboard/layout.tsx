@@ -186,16 +186,15 @@ export default function DashboardLayout({
         ]
       : []),
     {
-      title: 'LOGISTICS',
+      title: 'SHIPPING TOOLS',
       items: [
         { name: 'Dashboard Overview', path: '/dashboard', icon: LayoutDashboard },
         { name: 'Weight Calculator', path: '/dashboard/calculator', icon: Scale, moduleKey: 'WEIGHT_CALCULATOR' },
         { name: 'Rate Calculator', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
         { name: 'Rate Cards', path: '/dashboard/rate-cards', icon: Tags, moduleKey: 'RATE_CARDS' },
         { name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
-        { name: 'Pincode Lookup', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
-        { name: 'Carrier Tracking', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
-        { name: 'Calculation History', path: '/dashboard/history', icon: History, moduleKey: 'CALCULATION_HISTORY' },
+        { name: 'Pincode Search', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
+        { name: 'Tracker', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
         { name: 'Sales Follow-Up', path: '/dashboard/sales-follow-up', icon: UserCheck, moduleKey: 'SALES_FOLLOW_UP' },
       ],
     },

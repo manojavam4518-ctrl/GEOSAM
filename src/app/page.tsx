@@ -144,7 +144,7 @@ export default async function Home() {
                 <span className="text-[10px] font-black text-emerald-200 uppercase tracking-wider block">CARGO PACKAGING SHOP</span>
                 <h3 className="text-base font-extrabold text-white mt-1">Packaging for Your Shipments</h3>
                 <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
-                  Cotton box variants, stretch wraps, sealing tapes, or custom bulk requirements.
+                  Carton box variants, stretch wraps, sealing tapes, or custom bulk requirements.
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-emerald-500/50 flex items-center justify-between text-xs font-bold text-white">
@@ -229,11 +229,11 @@ export default async function Home() {
               <ul className="space-y-3 text-xs font-semibold text-slate-700">
                 <li className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-[#107c5a] shrink-0" />
-                  <span>Cotton Box Dimension Variants (Multiple L × W × H sizes)</span>
+                  <span>Carton Box Dimension Variants (Multiple L × W × H sizes)</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-[#107c5a] shrink-0" />
-                  <span>Industrial Sin Stretch Wrap & Heavy-Duty Sealing Tapes</span>
+                  <span>Industrial Sync Wrapper & Heavy-Duty Sealing Tapes</span>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-[#107c5a] shrink-0" />
@@ -283,7 +283,7 @@ export default async function Home() {
               </div>
               <h3 className="font-bold text-lg text-slate-900 group-hover:text-[#0F4C3A]">Multiple Box Size Variants</h3>
               <p className="text-slate-600 text-xs mt-2 leading-relaxed font-medium">
-                Select pre-configured cotton box dimensions or submit custom dimension inquiries directly to shop admins.
+                Select pre-configured carton box dimensions or submit custom dimension inquiries directly to shop admins.
               </p>
             </div>
 
@@ -365,7 +365,7 @@ export default async function Home() {
                 <span className="text-[10px] font-black text-[#107c5a] uppercase tracking-wider block">03 • SHIP</span>
                 <h4 className="font-extrabold text-sm text-slate-900">Optimal Logistics Option</h4>
                 <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                  Select best price carriers or order custom-sized cotton boxes & sealing tapes.
+                  Select best price carriers or order custom-sized carton boxes & sealing tapes.
                 </p>
               </div>
 

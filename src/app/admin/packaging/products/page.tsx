@@ -94,7 +94,7 @@ export default function AdminProductsPage() {
       setProductForm({
         name: '',
         description: '',
-        category: 'Sin Wrap',
+        category: 'Sync Wrapper',
         price: '',
         unit: 'roll',
         stock: '100',
@@ -263,7 +263,7 @@ export default function AdminProductsPage() {
       {/* Products list grid */}
       <div className="space-y-6">
         {products.map((product) => {
-          const isBox = product.category === 'Cotton Box';
+          const isBox = product.category === 'Carton Box';
 
           return (
             <div key={product.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
@@ -408,8 +408,8 @@ export default function AdminProductsPage() {
                   onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:bg-white transition"
                 >
-                  <option value="Cotton Box">Cotton Box</option>
-                  <option value="Sin Wrap">Sin Wrap</option>
+                  <option value="Carton Box">Carton Box</option>
+                  <option value="Sync Wrapper">Sync Wrapper</option>
                   <option value="Tape">Tape</option>
                 </select>
               </div>
@@ -426,7 +426,7 @@ export default function AdminProductsPage() {
               />
             </div>
 
-            {productForm.category !== 'Cotton Box' && (
+            {productForm.category !== 'Carton Box' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Price (₹)</label>

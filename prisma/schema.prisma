@@ -533,7 +533,7 @@ model PackagingProduct {
   name        String
   description String
   category    String   // e.g. Box, Wrap, Tape
-  price       Float?   // Nullable for Cotton Box which uses variants/dimensions
+  price       Float?   // Nullable for Carton Box which uses variants/dimensions
   unit        String?  // piece, roll, etc.
   minQuantity Int      @default(1)
   stock       Int      @default(0)

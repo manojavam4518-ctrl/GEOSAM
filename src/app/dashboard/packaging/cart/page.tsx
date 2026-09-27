@@ -147,7 +147,7 @@ export default function CartPage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm space-y-4">
           <ShoppingCart className="w-16 h-16 text-slate-200 mx-auto" />
           <h2 className="text-sm font-bold text-slate-700">Your cart is currently empty</h2>
-          <p className="text-xs text-slate-400 max-w-xs mx-auto">Add some Cotton Boxes, stretch wraps, or adhesive tapes to your cart from the store catalogue.</p>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto">Add some Carton Boxes, Sync Wrappers, or adhesive tapes to your cart from the store catalogue.</p>
           <Link
             href="/dashboard/packaging"
             className="inline-flex items-center gap-1.5 bg-[#0F4C3A] hover:bg-[#1E8262] text-white py-2 px-4 rounded-xl text-xs font-bold transition shadow-md"

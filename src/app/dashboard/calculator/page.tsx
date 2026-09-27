@@ -23,7 +23,9 @@ import {
   Info,
   CheckCircle2,
   PlusCircle,
+  History,
 } from 'lucide-react';
+import CalculationHistorySection from '@/components/CalculationHistorySection';
 
 interface CustomDivisorMode {
   id: string;
@@ -142,6 +144,7 @@ function CalculatorContent() {
 
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [sharePdfData, setSharePdfData] = useState<{ blob: Blob | null; filename: string } | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // Load saved custom divisor modes from localStorage
   useEffect(() => {
@@ -976,6 +979,7 @@ function CalculatorContent() {
       }
 
       setResult({ ...data.calculation, serviceType });
+      setHistoryRefreshKey((k) => k + 1);
       if (data.demoState) {
         setDemoState({
           calculationsUsed: data.demoState.calculationsUsed,
@@ -993,7 +997,7 @@ function CalculatorContent() {
   const isDark = theme === 'dark';
 
   return (
-    <div className={`space-y-6 w-full max-w-7xl mx-auto ${isDark ? 'bg-[#0B1310] text-slate-100 p-4 sm:p-6 rounded-2xl transition-colors duration-200' : 'transition-colors duration-200'}`}>
+    <div className={`space-y-6 w-full ${isDark ? 'bg-[#0B1310] text-slate-100 p-4 sm:p-6 rounded-2xl transition-colors duration-200' : 'transition-colors duration-200'}`}>
       {/* Page Header with Light/Dark Theme Switcher */}
       <div className={`flex items-center justify-between flex-wrap gap-4 border-b pb-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
         <div>
@@ -1001,27 +1005,41 @@ function CalculatorContent() {
           <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Volumetric cargo evaluation workspace</p>
         </div>
 
-        {user?.accessStatus === 'DEMO_ACTIVE' && (
-          <div className={`px-4 py-2 rounded-xl flex items-center gap-3 shadow-sm border ${
-            isDark ? 'bg-amber-950/40 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'
-          }`}>
-            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-            <div className="text-xs">
-              <span className="block font-bold leading-none">Demo Account Active</span>
-              <span className="block mt-1 text-[11px] opacity-80">
-                Remaining Demo: <strong>{(() => {
-                  const expiry = new Date(user.demoExpiresAt);
-                  return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-                })()} Days</strong>
-              </span>
+        <div className="flex items-center gap-3">
+          <a
+            href="#calculation-history"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition shadow-2xs ${
+              isDark
+                ? 'bg-[#182B25] hover:bg-[#1F3730] text-emerald-300 border-[#2E5448]'
+                : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-[#0F4C3A] border-slate-200'
+            }`}
+          >
+            <History className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Calculation History</span>
+          </a>
+
+          {user?.accessStatus === 'DEMO_ACTIVE' && (
+            <div className={`px-4 py-2 rounded-xl flex items-center gap-3 shadow-sm border ${
+              isDark ? 'bg-amber-950/40 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'
+            }`}>
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <div className="text-xs">
+                <span className="block font-bold leading-none">Demo Account Active</span>
+                <span className="block mt-1 text-[11px] opacity-80">
+                  Remaining Demo: <strong>{(() => {
+                    const expiry = new Date(user.demoExpiresAt);
+                    return Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                  })()} Days</strong>
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 xl:gap-6 items-start">
         {/* Left Form: Calculator Inputs */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-8 xl:col-span-8 space-y-6">
           
           {/* Unit Converter */}
           <div className={`border rounded-2xl shadow-sm overflow-hidden ${
@@ -2502,7 +2520,7 @@ function CalculatorContent() {
         </div>
 
         {/* Right Column: Result Panel */}
-        <div className="space-y-6 lg:sticky lg:top-3">
+        <div className="lg:col-span-4 xl:col-span-4 space-y-6 lg:sticky lg:top-3">
           <div id="calculator-result-panel" className={`border rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[300px] ${
             isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
           }`}>
@@ -2888,6 +2906,13 @@ function CalculatorContent() {
           </div>
         </div>
       </div>
+
+      {/* Calculation History - Final/Last Section under Weight Calculator */}
+      <CalculationHistorySection
+        isDark={isDark}
+        currentUser={user}
+        refreshTrigger={historyRefreshKey}
+      />
 
 
       {shareModalOpen && sharePdfData && (

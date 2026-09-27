@@ -23,12 +23,12 @@ export async function GET(req: NextRequest) {
     // Auto-seed default products if empty
     const count = await prisma.packagingProduct.count();
     if (count === 0) {
-      // 1. Seed Cotton Box
+      // 1. Seed Carton Box
       const boxProduct = await prisma.packagingProduct.create({
         data: {
-          name: 'Cotton Box',
-          description: 'High-quality heavy-duty corrugated cotton boxes for industrial shipping.',
-          category: 'Cotton Box',
+          name: 'Carton Box',
+          description: 'High-quality heavy-duty corrugated carton boxes for industrial shipping.',
+          category: 'Carton Box',
           price: null,
           unit: 'piece',
           minQuantity: 50,
@@ -75,12 +75,12 @@ export async function GET(req: NextRequest) {
         ]
       });
 
-      // 2. Seed Sin Wrap
+      // 2. Seed Sync Wrapper
       await prisma.packagingProduct.create({
         data: {
-          name: 'Sin Wrap',
+          name: 'Sync Wrapper',
           description: 'High-tensile stretch film wrap for securing cargo and pallet packaging.',
-          category: 'Sin Wrap',
+          category: 'Sync Wrapper',
           price: 350.0,
           unit: 'roll',
           minQuantity: 5,

@@ -23,7 +23,7 @@ export default function PackagingShopPage() {
   const [cartCount, setCartCount] = useState(0);
   const [cartLoading, setCartLoading] = useState(false);
   
-  // Selection states for Cotton Box
+  // Selection states for Carton Box
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   
@@ -39,7 +39,7 @@ export default function PackagingShopPage() {
     companyName: '',
     email: '',
     phone: '',
-    productMaterial: 'Cotton Box',
+    productMaterial: 'Carton Box',
     requiredDimension: '',
     requiredQuantity: '',
     deliveryLocation: '',
@@ -58,8 +58,8 @@ export default function PackagingShopPage() {
         const prodList = pData.products || [];
         setProducts(prodList);
         
-        // Auto-select first variant of Cotton Box if available
-        const boxProd = prodList.find((p: any) => p.category === 'Cotton Box');
+        // Auto-select first variant of Carton Box if available
+        const boxProd = prodList.find((p: any) => p.category === 'Carton Box');
         if (boxProd && boxProd.variants && boxProd.variants.length > 0) {
           const activeVariants = boxProd.variants.filter((v: any) => v.active);
           if (activeVariants.length > 0) {
@@ -70,7 +70,7 @@ export default function PackagingShopPage() {
         // Initialize quantities with minimums
         const initialQtys: Record<string, number> = {};
         prodList.forEach((p: any) => {
-          if (p.category === 'Cotton Box' && p.variants && p.variants.length > 0) {
+          if (p.category === 'Carton Box' && p.variants && p.variants.length > 0) {
             p.variants.forEach((v: any) => {
               initialQtys[v.id] = v.minQuantity;
             });
@@ -235,8 +235,8 @@ export default function PackagingShopPage() {
   }
 
   // Split products by categories
-  const boxProduct = products.find((p) => p.category === 'Cotton Box');
-  const standardProducts = products.filter((p) => p.category !== 'Cotton Box');
+  const boxProduct = products.find((p) => p.category === 'Carton Box');
+  const standardProducts = products.filter((p) => p.category !== 'Carton Box');
 
   return (
     <div className="space-y-6">
@@ -283,7 +283,7 @@ export default function PackagingShopPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Cotton Box Variant Card (Spans 2 columns on desktop) */}
+        {/* Carton Box Variant Card (Spans 2 columns on desktop) */}
         {boxProduct && (
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between hover-lift">
             <div>
@@ -399,7 +399,7 @@ export default function PackagingShopPage() {
           </div>
         )}
 
-        {/* Sin Wrap & Tape Cards (Stacked on sidebar side on desktop) */}
+        {/* Sync Wrapper & Tape Cards (Stacked on sidebar side on desktop) */}
         <div className="space-y-6">
           {standardProducts.map((p) => {
             const qty = quantities[p.id] || p.minQuantity;
@@ -533,8 +533,8 @@ export default function PackagingShopPage() {
                   onChange={(e) => setInquiryForm({ ...inquiryForm, productMaterial: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:bg-white transition"
                 >
-                  <option value="Cotton Box">Cotton Box</option>
-                  <option value="Sin Wrap">Sin Wrap</option>
+                  <option value="Carton Box">Carton Box</option>
+                  <option value="Sync Wrapper">Sync Wrapper</option>
                   <option value="Tape">Tape</option>
                   <option value="Other Packaging">Other / Special Custom Material</option>
                 </select>

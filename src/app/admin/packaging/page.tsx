@@ -169,7 +169,7 @@ export default function AdminPackagingDashboard() {
           </div>
           <h3 className="font-bold text-base text-slate-800 group-hover:text-[#0F4C3A]">Products & Box Sizes</h3>
           <p className="text-xs text-slate-500 leading-relaxed font-medium">
-            Manage Cotton Boxes, Sin Wraps, Tapes, unit pricing, minimum order quantities, stock levels, and custom dimension variants.
+            Manage Carton Boxes, Sync Wrappers, Tapes, unit pricing, minimum order quantities, stock levels, and custom dimension variants.
           </p>
           <div className="flex items-center gap-1.5 text-xs font-bold text-[#0F4C3A] pt-2">
             <span>Manage Catalog</span>
