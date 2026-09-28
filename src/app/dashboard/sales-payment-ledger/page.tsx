@@ -30,55 +30,55 @@ import {
   TableProperties,
   Save,
   CheckCircle,
+  Receipt,
+  DollarSign,
 } from 'lucide-react';
-import Link from 'next/link';
-import { exportCashLedgerToPDF, exportCashLedgerToCSV } from '@/utils/exportUtils';
 import {
-  LedgerFieldConfig,
-  LedgerFieldType,
-  REFERENCE_LEDGER_FIELDS,
-  extractRowFieldValue,
+  exportSalesPaymentLedgerToPDF,
+  exportSalesPaymentLedgerToCSV,
+} from '@/utils/exportUtils';
+import {
+  SalesPaymentFieldConfig,
+  SalesPaymentFieldType,
+  REFERENCE_SALES_PAYMENT_FIELDS,
+  extractSalesPaymentRowValue,
   getCurrentMonthYearString,
   generateMonthYearOptions,
-} from '@/lib/cashLedger';
+} from '@/lib/salesPaymentLedger';
 
-interface LedgerEntry {
+interface SalesPaymentEntry {
   id: string;
   date: string;
-  cashReceived: number;
-  receivedFrom: string | null;
-  purpose: string | null;
-  paidTo: string | null;
-  paidAmount: number;
-  bankDeposit: number;
-  cashInHand: number;
-  remarks: string | null;
+  invoiceMonth?: string | null;
+  customerType?: string | null;
+  customerName?: string | null;
+  invoiceNumber?: string | null;
+  totalInvoiceAmount: number;
+  paymentReceivedMode?: string | null;
+  chequeClearanceStatus?: string | null;
+  remarks?: string | null;
   data: Record<string, any>;
   createdByName?: string | null;
 }
 
 interface SummaryData {
-  initialCashInHand?: number;
-  totalCashReceived: number;
-  totalInvoiceAmount?: number;
-  totalPaidAmount: number;
-  totalBankDeposit: number;
-  currentCashInHand: number;
-  entryCount?: number;
-  modeTotals?: Record<string, number>;
+  recordCount: number;
+  totalInvoiceAmount: number;
+  columnTotals: Record<string, number>;
+  modeTotals: Record<string, number>;
+  modeCounts: Record<string, number>;
 }
 
-export default function CounterCashLedgerPage() {
+export default function SalesPaymentCollectionLedgerPage() {
   const [loading, setLoading] = useState(true);
-  const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [fields, setFields] = useState<LedgerFieldConfig[]>([]);
+  const [entries, setEntries] = useState<SalesPaymentEntry[]>([]);
+  const [fields, setFields] = useState<SalesPaymentFieldConfig[]>([]);
   const [summary, setSummary] = useState<SummaryData>({
-    totalCashReceived: 0,
+    recordCount: 0,
     totalInvoiceAmount: 0,
-    totalPaidAmount: 0,
-    totalBankDeposit: 0,
-    currentCashInHand: 0,
+    columnTotals: {},
     modeTotals: {},
+    modeCounts: {},
   });
   const [userRole, setUserRole] = useState<string>('USER');
   const [organizationName, setOrganizationName] = useState<string>('GEO TRANSIT');
@@ -102,7 +102,7 @@ export default function CounterCashLedgerPage() {
 
   // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [entryToDelete, setEntryToDelete] = useState<LedgerEntry | null>(null);
+  const [entryToDelete, setEntryToDelete] = useState<SalesPaymentEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // Share state
@@ -112,19 +112,18 @@ export default function CounterCashLedgerPage() {
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
 
-  const isSuperAdmin = userRole === 'ADMIN';
   const isOrgAdmin = userRole === 'ORG_ADMIN' || userRole === 'OWNER' || userRole === 'ADMIN';
 
   // Organization Admin Column Customizer state
   const [isCustomizingColumns, setIsCustomizingColumns] = useState(false);
-  const [builderFields, setBuilderFields] = useState<LedgerFieldConfig[]>([]);
+  const [builderFields, setBuilderFields] = useState<SalesPaymentFieldConfig[]>([]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [newOptionInputs, setNewOptionInputs] = useState<Record<string, string>>({});
 
-  const FIELD_TYPES: { type: LedgerFieldType; label: string; desc: string }[] = [
-    { type: 'SHORT_TEXT', label: 'Short Text', desc: 'Single-line text (names, IDs, alphanumeric codes)' },
+  const FIELD_TYPES: { type: SalesPaymentFieldType; label: string; desc: string }[] = [
+    { type: 'SHORT_TEXT', label: 'Short Text', desc: 'Single-line text (names, invoice numbers, codes)' },
     { type: 'LONG_TEXT', label: 'Long Text', desc: 'Multi-line notes and descriptions' },
-    { type: 'NUMBER', label: 'Number', desc: 'Numeric counts or quantities' },
+    { type: 'NUMBER', label: 'Number', desc: 'Numeric values and quantities' },
     { type: 'CURRENCY', label: 'Currency (INR ₹)', desc: 'Monetary amounts formatted with INR ₹' },
     { type: 'DATE', label: 'Date', desc: 'Standard calendar date (DD/MM/YYYY)' },
     { type: 'MONTH', label: 'Month', desc: 'Billing/Invoice month selector (e.g. APRIL_2026)' },
@@ -136,7 +135,7 @@ export default function CounterCashLedgerPage() {
     { type: 'PHONE', label: 'Phone Number', desc: 'Mobile or phone number' },
   ];
 
-  // Standard month-year options list (e.g. APRIL_2026, MAY_2026)
+  // Standard month-year options list
   const monthOptions = useMemo(() => generateMonthYearOptions(), []);
 
   // Fetch current user and org context
@@ -177,23 +176,22 @@ export default function CounterCashLedgerPage() {
         }
       });
 
-      const res = await fetch(`/api/organization/cash-ledger?${queryParams.toString()}`);
+      const res = await fetch(`/api/organization/sales-payment-ledger?${queryParams.toString()}`);
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Failed to load counter cash ledger.');
+        throw new Error(errData.error || 'Failed to load Sales Payment Collection Ledger.');
       }
       const data = await res.json();
       setEntries(data.entries || []);
-      const loadedFields: LedgerFieldConfig[] = data.fields || data.columns || REFERENCE_LEDGER_FIELDS;
+      const loadedFields: SalesPaymentFieldConfig[] = data.fields || data.columns || REFERENCE_SALES_PAYMENT_FIELDS;
       setFields(loadedFields);
       setSummary(
         data.summary || {
-          totalCashReceived: 0,
+          recordCount: 0,
           totalInvoiceAmount: 0,
-          totalPaidAmount: 0,
-          totalBankDeposit: 0,
-          currentCashInHand: 0,
+          columnTotals: {},
           modeTotals: {},
+          modeCounts: {},
         }
       );
     } catch (err: any) {
@@ -207,16 +205,15 @@ export default function CounterCashLedgerPage() {
     loadLedgerData();
   }, [preset, startDate, endDate, columnFilters]);
 
-  // Handle Search Submission
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     loadLedgerData();
   };
 
-  // Active visible columns configured by Super Admin
+  // Active visible columns
   const activeFields = useMemo(() => {
     const list = fields.filter((f) => f.active !== false);
-    return list.length > 0 ? list : REFERENCE_LEDGER_FIELDS;
+    return list.length > 0 ? list : REFERENCE_SALES_PAYMENT_FIELDS;
   }, [fields]);
 
   // Detected dropdown fields for toolbar filtering
@@ -226,7 +223,7 @@ export default function CounterCashLedgerPage() {
     );
   }, [activeFields]);
 
-  // Prepare initial row data from default values
+  // Default values for a new row
   const initDefaultRowData = () => {
     const defaults: Record<string, any> = {};
     activeFields.forEach((f) => {
@@ -234,14 +231,10 @@ export default function CounterCashLedgerPage() {
         defaults[f.key] = f.defaultValue;
       } else if (f.type === 'MONTH') {
         defaults[f.key] = getCurrentMonthYearString();
-      } else if (f.type === 'DATE') {
-        defaults[f.key] = new Date().toISOString().split('T')[0];
-      } else if (f.type === 'DROPDOWN' || f.type === 'MULTIPLE_CHOICE') {
+      } else if (f.type === 'DROPDOWN' && f.options && f.options.length > 0 && f.required) {
+        defaults[f.key] = f.options[0];
+      } else if (f.type === 'CURRENCY' || f.type === 'NUMBER') {
         defaults[f.key] = '';
-      } else if (f.type === 'CHECKBOX') {
-        defaults[f.key] = [];
-      } else if (f.type === 'YES_NO') {
-        defaults[f.key] = 'NO';
       } else {
         defaults[f.key] = '';
       }
@@ -249,37 +242,23 @@ export default function CounterCashLedgerPage() {
     return defaults;
   };
 
-  // Start Adding Row
   const startAddRow = () => {
-    setEditingRowId(null);
     setNewRowData(initDefaultRowData());
     setIsAddingRow(true);
+    setEditingRowId(null);
   };
 
-  // Cancel Adding Row
   const cancelAddRow = () => {
     setIsAddingRow(false);
     setNewRowData({});
   };
 
-  // Save New Row
+  // Save new row
   const handleSaveNewRow = async () => {
     setSavingNewRow(true);
     setError('');
     try {
-      for (const field of activeFields) {
-        if (field.required) {
-          const val = extractRowFieldValue(newRowData, newRowData, field.key);
-          if (val === undefined || val === null || val === '') {
-            throw new Error(`Field "${field.name}" is required.`);
-          }
-          if (Array.isArray(val) && val.length === 0) {
-            throw new Error(`Field "${field.name}" requires at least one selection.`);
-          }
-        }
-      }
-
-      const res = await fetch('/api/organization/cash-ledger', {
+      const res = await fetch('/api/organization/sales-payment-ledger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: newRowData }),
@@ -292,51 +271,38 @@ export default function CounterCashLedgerPage() {
 
       setIsAddingRow(false);
       setNewRowData({});
-      setMessage('Ledger transaction recorded successfully.');
-      setTimeout(() => setMessage(''), 4000);
-      loadLedgerData();
+      setMessage('Transaction row saved successfully.');
+      setTimeout(() => setMessage(''), 3000);
+      await loadLedgerData();
     } catch (err: any) {
-      setError(err.message || 'Error saving row');
+      setError(err.message || 'Error saving new row');
     } finally {
       setSavingNewRow(false);
     }
   };
 
-  // Start Editing Existing Row
-  const startEditRow = (entry: LedgerEntry) => {
-    setIsAddingRow(false);
-    setEditingRowId(entry.id);
-    const existingData: Record<string, any> = { ...(entry.data || {}) };
-
+  // Start inline editing
+  const startEditRow = (entry: SalesPaymentEntry) => {
+    const editData: Record<string, any> = { ...(entry.data || {}) };
     activeFields.forEach((f) => {
-      const val = extractRowFieldValue(entry.data, entry, f.key);
-      existingData[f.key] = val;
+      editData[f.key] = extractSalesPaymentRowValue(entry.data, entry, f.key);
     });
-
-    setEditingRowData(existingData);
+    setEditingRowId(entry.id);
+    setEditingRowData(editData);
+    setIsAddingRow(false);
   };
 
-  // Cancel Editing Row
   const cancelEditRow = () => {
     setEditingRowId(null);
     setEditingRowData({});
   };
 
-  // Save Edited Row
+  // Save edited row
   const handleSaveEditRow = async (id: string) => {
     setSavingEditRow(true);
     setError('');
     try {
-      for (const field of activeFields) {
-        if (field.required) {
-          const val = extractRowFieldValue(editingRowData, editingRowData, field.key);
-          if (val === undefined || val === null || val === '') {
-            throw new Error(`Field "${field.name}" is required.`);
-          }
-        }
-      }
-
-      const res = await fetch(`/api/organization/cash-ledger/${id}`, {
+      const res = await fetch(`/api/organization/sales-payment-ledger/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: editingRowData }),
@@ -349,9 +315,9 @@ export default function CounterCashLedgerPage() {
 
       setEditingRowId(null);
       setEditingRowData({});
-      setMessage('Ledger transaction updated.');
-      setTimeout(() => setMessage(''), 4000);
-      loadLedgerData();
+      setMessage('Transaction row updated successfully.');
+      setTimeout(() => setMessage(''), 3000);
+      await loadLedgerData();
     } catch (err: any) {
       setError(err.message || 'Error updating row');
     } finally {
@@ -359,25 +325,31 @@ export default function CounterCashLedgerPage() {
     }
   };
 
-  // Confirm Delete Entry
+  // Delete row
+  const confirmDeleteRow = (entry: SalesPaymentEntry) => {
+    setEntryToDelete(entry);
+    setDeleteModalOpen(true);
+  };
+
   const handleDeleteRow = async () => {
     if (!entryToDelete) return;
     setDeleting(true);
+    setError('');
     try {
-      const res = await fetch(`/api/organization/cash-ledger/${entryToDelete.id}`, {
+      const res = await fetch(`/api/organization/sales-payment-ledger/${entryToDelete.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Failed to delete entry.');
+        throw new Error(errData.error || 'Failed to delete row.');
       }
       setDeleteModalOpen(false);
       setEntryToDelete(null);
-      setMessage('Ledger row deleted.');
-      setTimeout(() => setMessage(''), 4000);
-      loadLedgerData();
+      setMessage('Row deleted successfully.');
+      setTimeout(() => setMessage(''), 3000);
+      await loadLedgerData();
     } catch (err: any) {
-      setError(err.message || 'Failed to delete ledger entry.');
+      setError(err.message || 'Error deleting row');
     } finally {
       setDeleting(false);
     }
@@ -385,7 +357,7 @@ export default function CounterCashLedgerPage() {
 
   // Export PDF
   const handleExportPDF = async () => {
-    await exportCashLedgerToPDF({
+    await exportSalesPaymentLedgerToPDF({
       entries,
       columns: activeFields,
       summary,
@@ -399,7 +371,7 @@ export default function CounterCashLedgerPage() {
 
   // Export CSV
   const handleExportCSV = () => {
-    exportCashLedgerToCSV({
+    exportSalesPaymentLedgerToCSV({
       entries,
       columns: activeFields,
       summary,
@@ -423,8 +395,8 @@ export default function CounterCashLedgerPage() {
 
   // Open Column Customizer for Organization Admin
   const openColumnCustomizer = () => {
-    const cloned: LedgerFieldConfig[] = JSON.parse(
-      JSON.stringify(fields.length > 0 ? fields : REFERENCE_LEDGER_FIELDS)
+    const cloned: SalesPaymentFieldConfig[] = JSON.parse(
+      JSON.stringify(fields.length > 0 ? fields : REFERENCE_SALES_PAYMENT_FIELDS)
     );
     setBuilderFields(cloned);
     setIsCustomizingColumns(true);
@@ -432,8 +404,8 @@ export default function CounterCashLedgerPage() {
 
   // Field Builder Handlers
   const handleAddBuilderField = () => {
-    const newId = `fld_${Date.now()}`;
-    const newField: LedgerFieldConfig = {
+    const newId = `spf_${Date.now()}`;
+    const newField: SalesPaymentFieldConfig = {
       id: newId,
       key: `col_${Date.now()}`,
       name: `Untitled Column ${builderFields.length + 1}`,
@@ -448,11 +420,12 @@ export default function CounterCashLedgerPage() {
       decimalPlaces: 2,
       dateFormat: 'DD/MM/YYYY',
       monthFormat: 'MMMM_YYYY',
+      includeInTotal: false,
     };
     setBuilderFields((prev) => [...prev, newField]);
   };
 
-  const updateBuilderField = (id: string, updates: Partial<LedgerFieldConfig>) => {
+  const updateBuilderField = (id: string, updates: Partial<SalesPaymentFieldConfig>) => {
     setBuilderFields((prev) =>
       prev.map((f) => {
         if (f.id === id) {
@@ -541,7 +514,7 @@ export default function CounterCashLedgerPage() {
     setSavingConfig(true);
     setError('');
     try {
-      const res = await fetch('/api/organization/cash-ledger/config', {
+      const res = await fetch('/api/organization/sales-payment-ledger/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: builderFields }),
@@ -553,7 +526,7 @@ export default function CounterCashLedgerPage() {
       const data = await res.json();
       setFields(data.fields || builderFields);
       setIsCustomizingColumns(false);
-      setMessage('Organization ledger columns updated successfully.');
+      setMessage('Sales Payment Collection Ledger columns updated successfully.');
       setTimeout(() => setMessage(''), 4000);
       await loadLedgerData();
     } catch (err: any) {
@@ -570,7 +543,7 @@ export default function CounterCashLedgerPage() {
     setSavingConfig(true);
     setError('');
     try {
-      const res = await fetch('/api/organization/cash-ledger/config', {
+      const res = await fetch('/api/organization/sales-payment-ledger/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -579,7 +552,7 @@ export default function CounterCashLedgerPage() {
         throw new Error(errData.error || 'Failed to reset columns.');
       }
       const data = await res.json();
-      const defs = data.fields || REFERENCE_LEDGER_FIELDS;
+      const defs = data.fields || REFERENCE_SALES_PAYMENT_FIELDS;
       setFields(defs);
       setBuilderFields(defs);
       setIsCustomizingColumns(false);
@@ -593,28 +566,26 @@ export default function CounterCashLedgerPage() {
     }
   };
 
-  // Render Cell Input Control based on Super Admin configured field type
+  // Render Cell Input Control based on configured field type
   const renderCellInput = (
-    field: LedgerFieldConfig,
+    field: SalesPaymentFieldConfig,
     value: any,
     onChange: (val: any) => void
   ) => {
     switch (field.type) {
       case 'MONTH':
         return (
-          <div className="relative">
-            <select
-              value={value ?? getCurrentMonthYearString()}
-              onChange={(e) => onChange(e.target.value)}
-              className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-emerald-900 font-bold outline-none cursor-pointer"
-            >
-              {monthOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={value ?? getCurrentMonthYearString()}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-emerald-900 font-bold outline-none cursor-pointer"
+          >
+            {monthOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
         );
 
       case 'SHORT_TEXT':
@@ -671,70 +642,79 @@ export default function CounterCashLedgerPage() {
         return (
           <input
             type="date"
-            value={value ?? ''}
+            value={value ? new Date(value).toISOString().split('T')[0] : ''}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-1.5 py-1 text-xs text-slate-800 outline-none cursor-pointer"
+            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 outline-none cursor-pointer"
           />
         );
 
       case 'DROPDOWN':
-      case 'MULTIPLE_CHOICE':
         return (
           <select
             value={value ?? ''}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 font-medium outline-none cursor-pointer"
+            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 outline-none cursor-pointer"
           >
-            <option value="">Select {field.name} ▼</option>
-            {(field.options || []).map((opt, i) => (
-              <option key={i} value={opt}>
+            <option value="">Select {field.name}...</option>
+            {(field.options || []).map((opt) => (
+              <option key={opt} value={opt}>
                 {opt}
               </option>
             ))}
           </select>
         );
 
-      case 'CHECKBOX':
-        const selectedArr = Array.isArray(value) ? value : value ? [value] : [];
+      case 'MULTIPLE_CHOICE':
         return (
-          <div className="flex flex-wrap gap-1 max-w-[240px]">
-            {(field.options || ['Option 1']).map((opt, idx) => {
-              const isChecked = selectedArr.includes(opt);
-              return (
-                <label
-                  key={idx}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border cursor-pointer ${
-                    isChecked
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold'
-                      : 'bg-white text-slate-600 border-slate-200'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        onChange([...selectedArr, opt]);
-                      } else {
-                        onChange(selectedArr.filter((item: string) => item !== opt));
-                      }
-                    }}
-                    className="w-3 h-3 text-[#0F4C3A] rounded"
-                  />
-                  <span>{opt}</span>
-                </label>
-              );
-            })}
+          <div className="flex flex-wrap gap-2 py-0.5">
+            {(field.options || []).map((opt) => (
+              <label key={opt} className="flex items-center gap-1 text-[11px] text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`radio_${field.key}`}
+                  value={opt}
+                  checked={value === opt}
+                  onChange={() => onChange(opt)}
+                  className="text-[#0F4C3A]"
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        );
+
+      case 'CHECKBOX':
+        const checkedList = Array.isArray(value) ? value : [];
+        return (
+          <div className="flex flex-wrap gap-2 py-0.5">
+            {(field.options || []).map((opt) => (
+              <label key={opt} className="flex items-center gap-1 text-[11px] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checkedList.includes(opt)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      onChange([...checkedList, opt]);
+                    } else {
+                      onChange(checkedList.filter((item: string) => item !== opt));
+                    }
+                  }}
+                  className="rounded text-[#0F4C3A]"
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
           </div>
         );
 
       case 'YES_NO':
         return (
           <select
-            value={value ?? 'NO'}
+            value={value ?? ''}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 font-semibold outline-none cursor-pointer"
+            className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 outline-none cursor-pointer"
           >
+            <option value="">Select...</option>
             <option value="YES">YES</option>
             <option value="NO">NO</option>
           </select>
@@ -746,7 +726,7 @@ export default function CounterCashLedgerPage() {
             type="email"
             value={value ?? ''}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="client@mail.com"
+            placeholder="client@domain.com"
             className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 outline-none"
           />
         );
@@ -757,7 +737,7 @@ export default function CounterCashLedgerPage() {
             type="tel"
             value={value ?? ''}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="+91..."
+            placeholder="+91 98765 43210"
             className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded px-2 py-1 text-xs text-slate-800 outline-none"
           />
         );
@@ -775,8 +755,8 @@ export default function CounterCashLedgerPage() {
   };
 
   // Render Cell Display (View Mode)
-  const renderCellDisplay = (field: LedgerFieldConfig, entry: LedgerEntry) => {
-    const val = extractRowFieldValue(entry.data, entry, field.key);
+  const renderCellDisplay = (field: SalesPaymentFieldConfig, entry: SalesPaymentEntry) => {
+    const val = extractSalesPaymentRowValue(entry.data, entry, field.key);
 
     if (val === undefined || val === null || val === '') {
       return <span className="text-slate-300 select-none">-</span>;
@@ -878,7 +858,7 @@ export default function CounterCashLedgerPage() {
           {/* Title & Organization Info */}
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-[#0F4C3A] text-white flex items-center justify-center shadow-2xs">
-              <FileSpreadsheet className="w-5 h-5" />
+              <Receipt className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -886,13 +866,13 @@ export default function CounterCashLedgerPage() {
                   SALES PAYMENT COLLECTION LEDGER
                 </h1>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                  Counter Cash Register
+                  Collection Register
                 </span>
                 <span className="text-xs text-slate-400 font-semibold">• {organizationName}</span>
               </div>
               <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
                 <Lock className="w-3 h-3 text-slate-400" />
-                Spreadsheet Mode • Columns configured by Admin
+                Spreadsheet Mode • Organization Configured
               </p>
             </div>
           </div>
@@ -975,75 +955,64 @@ export default function CounterCashLedgerPage() {
       {/* 2. SPREADSHEET TOOLBAR & FILTERS */}
       <section className="bg-white border-b border-slate-200 px-4 py-2.5 shadow-2xs">
         <div className="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-          {/* Left: Search & Date Range */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Search */}
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search ledger records..."
-                className="bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-[#0F4C3A] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 outline-none w-56 transition"
-              />
-            </form>
-
-            {/* Date Preset Selector */}
-            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600">
-              {['today', 'this_week', 'this_month', 'all', 'custom'].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPreset(p)}
-                  className={`px-2.5 py-1 rounded-md capitalize transition cursor-pointer ${
-                    preset === p
-                      ? 'bg-white text-slate-900 font-bold shadow-2xs'
-                      : 'hover:text-slate-900'
-                  }`}
-                >
-                  {p.replace('_', ' ')}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom Date Inputs if preset is custom */}
-            {preset === 'custom' && (
-              <div className="flex items-center gap-1.5 animate-fadeIn">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 outline-none"
-                />
-                <span className="text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 outline-none"
-                />
-              </div>
-            )}
+          {/* Left: Quick Date Presets */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            {[
+              { id: 'today', label: 'Today' },
+              { id: 'this_week', label: 'This Week' },
+              { id: 'this_month', label: 'This Month' },
+              { id: 'all', label: 'All' },
+              { id: 'custom', label: 'Custom' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setPreset(p.id)}
+                className={`px-3 py-1 rounded-md font-semibold text-xs transition cursor-pointer ${
+                  preset === p.id
+                    ? 'bg-white text-[#0F4C3A] shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
 
-          {/* Right: Dynamic Column Dropdown Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            {filterableDropdownFields.map((filterField) => (
-              <div key={filterField.id} className="flex items-center gap-1">
-                <span className="text-slate-500 font-medium text-[11px]">{filterField.name}:</span>
+          {/* Custom Date Pickers */}
+          {preset === 'custom' && (
+            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200 animate-fadeIn">
+              <span className="text-[11px] font-bold text-slate-500">From:</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs text-slate-700 outline-none"
+              />
+              <span className="text-[11px] font-bold text-slate-500">To:</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-white border border-slate-300 rounded px-2 py-0.5 text-xs text-slate-700 outline-none"
+              />
+            </div>
+          )}
+
+          {/* Right: Dropdown Column Filters & Search */}
+          <div className="flex items-center gap-2.5 ml-auto">
+            {filterableDropdownFields.slice(0, 3).map((field) => (
+              <div key={field.key} className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-500 font-semibold">{field.name}:</span>
                 <select
-                  value={columnFilters[filterField.key] || 'ALL'}
+                  value={columnFilters[field.key] || 'ALL'}
                   onChange={(e) =>
-                    setColumnFilters((prev) => ({
-                      ...prev,
-                      [filterField.key]: e.target.value,
-                    }))
+                    setColumnFilters((prev) => ({ ...prev, [field.key]: e.target.value }))
                   }
-                  className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-800 font-semibold outline-none focus:border-[#0F4C3A] cursor-pointer shadow-2xs"
+                  className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 outline-none cursor-pointer"
                 >
-                  <option value="ALL">All {filterField.name}</option>
-                  {(filterField.options || []).map((opt, i) => (
-                    <option key={i} value={opt}>
+                  <option value="ALL">All</option>
+                  {(field.options || []).map((opt) => (
+                    <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
@@ -1051,239 +1020,241 @@ export default function CounterCashLedgerPage() {
               </div>
             ))}
 
-            {/* Clear Filters */}
-            {(search || preset !== 'this_month' || Object.values(columnFilters).some((v) => v && v !== 'ALL')) && (
-              <button
-                onClick={() => {
-                  setSearch('');
-                  setPreset('this_month');
-                  setStartDate('');
-                  setEndDate('');
-                  setColumnFilters({});
-                }}
-                className="py-1 px-2 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
-              >
-                Clear Filters
-              </button>
-            )}
+            {/* Search Box */}
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search ledger records..."
+                className="w-56 pl-7 pr-3 py-1 bg-slate-50 focus:bg-white border border-slate-200 focus:border-[#0F4C3A] rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none transition"
+              />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" />
+            </form>
           </div>
         </div>
       </section>
 
-      {/* 3. NOTIFICATIONS */}
-      <div className="max-w-[1700px] mx-auto px-4 pt-3">
-        {message && (
-          <div className="p-3 mb-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
-            <div className="flex items-center gap-2">
+      {/* Notifications */}
+      {message && (
+        <div className="max-w-[1700px] mx-auto px-4 mt-3">
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
+            <span className="flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-600" />
-              <span>{message}</span>
-            </div>
+              {message}
+            </span>
             <button onClick={() => setMessage('')} className="text-emerald-700 hover:text-emerald-900">
               <X className="w-4 h-4" />
             </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {error && (
-          <div className="p-3 mb-2 rounded-xl bg-red-50 border border-red-200 text-red-900 text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
-            <div className="flex items-center gap-2">
+      {error && (
+        <div className="max-w-[1700px] mx-auto px-4 mt-3">
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-center justify-between shadow-2xs animate-fadeIn">
+            <span className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-red-600" />
-              <span>{error}</span>
-            </div>
+              {error}
+            </span>
             <button onClick={() => setError('')} className="text-red-700 hover:text-red-900">
               <X className="w-4 h-4" />
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* 4. EXCEL-LIKE SPREADSHEET GRID */}
-      <main className="max-w-[1700px] mx-auto px-4 pt-2">
-        <div className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
-          {/* Scrollable Spreadsheet Table Container */}
-          <div className="overflow-x-auto overflow-y-auto max-h-[640px] relative">
-            <table className="w-full border-collapse text-left select-text">
-              {/* Sticky Table Header with Column Letters (A, B, C...) and Field Titles */}
-              <thead className="sticky top-0 z-20 bg-[#F1F5F9] border-b-2 border-slate-300 shadow-2xs text-[11px] font-bold text-slate-700 tracking-wider uppercase select-none">
-                <tr className="divide-x divide-slate-300">
-                  {/* Row Index Column (Excel row numbers) */}
-                  <th className="w-14 px-3 py-2.5 text-center bg-slate-200 text-slate-600 font-mono text-[11px] sticky left-0 z-30">
+      {/* 3. SPREADSHEET TABLE GRID */}
+      <main className="max-w-[1700px] mx-auto px-4 mt-4">
+        <div className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden flex flex-col">
+          {/* Scrollable Grid Container */}
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full text-left border-collapse text-xs select-text">
+              {/* Spreadsheet Column Headers */}
+              <thead className="sticky top-0 z-20 bg-[#F8FAFC] border-b border-slate-300 text-slate-700 font-bold select-none shadow-2xs">
+                <tr>
+                  <th className="w-12 px-2 py-2 text-center text-[10px] font-mono font-bold text-slate-400 border-r border-slate-200 bg-slate-100">
                     #
                   </th>
 
-                  {/* Dynamic Columns configured by Super Admin */}
                   {activeFields.map((field, idx) => {
                     const colLetter = String.fromCharCode(65 + (idx % 26));
                     return (
                       <th
-                        key={field.id}
-                        style={{ minWidth: field.width || 170 }}
-                        className="px-3.5 py-2.5 font-bold whitespace-nowrap bg-[#F1F5F9]"
+                        key={field.key}
+                        style={{ minWidth: `${field.width || 170}px` }}
+                        className="px-3 py-2 border-r border-slate-200 text-slate-800 text-xs font-bold whitespace-nowrap bg-[#F8FAFC] hover:bg-slate-100 transition"
                       >
                         <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-[10px] text-slate-400 font-bold">{colLetter}</span>
-                            <span>{field.name}</span>
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-[10px] font-mono text-slate-400 font-semibold">{colLetter}</span>
+                            <span className="truncate">{field.name}</span>
+                            {field.required && <span className="text-red-500 font-bold">*</span>}
                           </div>
-                          {field.required && <span className="text-red-500 font-bold" title="Required">*</span>}
                         </div>
                       </th>
                     );
                   })}
 
-                  {/* Actions Column */}
-                  <th className="w-24 px-3 py-2.5 text-center bg-[#F1F5F9] font-bold whitespace-nowrap sticky right-0 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                    ACTIONS
+                  <th className="w-24 px-3 py-2 text-center text-slate-700 text-xs font-bold whitespace-nowrap bg-[#F8FAFC]">
+                    Actions
                   </th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-slate-200 text-xs">
-                {/* 5. INLINE ADD ROW */}
+              <tbody>
+                {/* 4. INLINE ADD ROW (Spreadsheet Style) */}
                 {isAddingRow && (
-                  <tr className="bg-emerald-50/70 ring-2 ring-emerald-500 ring-inset divide-x divide-emerald-200 animate-fadeIn">
-                    <td className="w-14 px-2 py-2 text-center font-bold font-mono text-emerald-800 bg-emerald-100/80 sticky left-0 z-10">
+                  <tr className="bg-emerald-50/70 border-b-2 border-emerald-400 animate-fadeIn">
+                    <td className="w-12 px-2 py-2 text-center text-xs font-mono font-bold text-emerald-700 border-r border-emerald-200 bg-emerald-100/50">
                       NEW
                     </td>
 
                     {activeFields.map((field) => (
-                      <td key={field.id} className="p-1.5 align-middle">
-                        {renderCellInput(
-                          field,
-                          newRowData[field.key],
-                          (val) => setNewRowData((prev) => ({ ...prev, [field.key]: val }))
+                      <td
+                        key={field.key}
+                        style={{ minWidth: `${field.width || 170}px` }}
+                        className="p-1.5 border-r border-emerald-200 align-middle"
+                      >
+                        {renderCellInput(field, newRowData[field.key], (val) =>
+                          setNewRowData((prev) => ({ ...prev, [field.key]: val }))
                         )}
                       </td>
                     ))}
 
-                    <td className="px-2 py-2 text-center whitespace-nowrap sticky right-0 bg-emerald-50 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                      <div className="flex items-center justify-center gap-1">
+                    <td className="w-24 p-1.5 text-center whitespace-nowrap align-middle">
+                      <div className="flex items-center justify-center gap-1.5">
                         <button
+                          type="button"
                           onClick={handleSaveNewRow}
                           disabled={savingNewRow}
-                          className="py-1 px-2.5 rounded bg-[#0F4C3A] hover:bg-[#15674F] text-white text-[11px] font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                          className="p-1.5 rounded-md bg-[#0F4C3A] hover:bg-[#15674F] text-white transition cursor-pointer shadow-2xs"
                           title="Save Row"
                         >
                           {savingNewRow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          <span>Save</span>
                         </button>
                         <button
+                          type="button"
                           onClick={cancelAddRow}
                           disabled={savingNewRow}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+                          className="p-1.5 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
                           title="Cancel"
                         >
-                          <X className="w-4 h-4" />
+                          <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
                   </tr>
                 )}
 
-                {/* 6. EXISTING ROWS LIST */}
-                {entries.length === 0 && !isAddingRow ? (
+                {/* 5. TABLE ROWS (View & Inline Edit) */}
+                {loading && entries.length === 0 ? (
                   <tr>
-                    <td colSpan={activeFields.length + 2} className="py-14 text-center text-slate-400">
+                    <td colSpan={activeFields.length + 2} className="py-16 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-2">
-                        <FileSpreadsheet className="w-8 h-8 text-slate-300" />
-                        <p className="font-semibold text-sm text-slate-600">No records found for this period</p>
-                        <p className="text-xs text-slate-400 max-w-sm">
-                          Click <strong className="text-[#0F4C3A]">+ ADD ROW</strong> in the top ribbon to enter transaction data into the spreadsheet.
-                        </p>
+                        <Loader2 className="w-6 h-6 animate-spin text-[#0F4C3A]" />
+                        <span className="text-xs font-semibold">Loading ledger records...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : entries.length === 0 && !isAddingRow ? (
+                  <tr>
+                    <td colSpan={activeFields.length + 2} className="py-16 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Receipt className="w-8 h-8 text-slate-300" />
+                        <p className="text-xs font-semibold text-slate-600">No collection records found for this period.</p>
+                        <button
+                          onClick={startAddRow}
+                          className="mt-2 py-1.5 px-3 rounded-lg bg-[#0F4C3A] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:bg-[#15674F] transition cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          + ADD FIRST ROW
+                        </button>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  entries.map((entry, rowIndex) => {
+                  entries.map((entry, rIdx) => {
                     const isEditing = editingRowId === entry.id;
 
-                    if (isEditing) {
-                      return (
-                        <tr
-                          key={entry.id}
-                          className="bg-amber-50/70 ring-2 ring-amber-400 ring-inset divide-x divide-amber-200 animate-fadeIn"
-                        >
-                          <td className="w-14 px-2 py-2 text-center font-bold font-mono text-amber-900 bg-amber-100 sticky left-0 z-10">
-                            {rowIndex + 1}
+                    return (
+                      <tr
+                        key={entry.id}
+                        className={`border-b border-slate-200 transition ${
+                          isEditing
+                            ? 'bg-amber-50/70 border-amber-300'
+                            : rIdx % 2 === 1
+                            ? 'bg-[#FAFCFF] hover:bg-slate-50'
+                            : 'bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        {/* Row Index Number */}
+                        <td className="w-12 px-2 py-2 text-center text-[11px] font-mono text-slate-400 font-semibold border-r border-slate-200 bg-slate-50/50">
+                          {rIdx + 1}
+                        </td>
+
+                        {/* Cell Values */}
+                        {activeFields.map((field) => (
+                          <td
+                            key={field.key}
+                            style={{ minWidth: `${field.width || 170}px` }}
+                            className="px-3 py-2 border-r border-slate-200 align-middle"
+                          >
+                            {isEditing
+                              ? renderCellInput(field, editingRowData[field.key], (val) =>
+                                  setEditingRowData((prev) => ({ ...prev, [field.key]: val }))
+                                )
+                              : renderCellDisplay(field, entry)}
                           </td>
+                        ))}
 
-                          {activeFields.map((field) => (
-                            <td key={field.id} className="p-1.5 align-middle">
-                              {renderCellInput(
-                                field,
-                                editingRowData[field.key],
-                                (val) => setEditingRowData((prev) => ({ ...prev, [field.key]: val }))
-                              )}
-                            </td>
-                          ))}
-
-                          <td className="px-2 py-2 text-center whitespace-nowrap sticky right-0 bg-amber-50 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                            <div className="flex items-center justify-center gap-1">
+                        {/* Actions */}
+                        <td className="w-24 px-3 py-2 text-center whitespace-nowrap align-middle">
+                          {isEditing ? (
+                            <div className="flex items-center justify-center gap-1.5">
                               <button
+                                type="button"
                                 onClick={() => handleSaveEditRow(entry.id)}
                                 disabled={savingEditRow}
-                                className="py-1 px-2.5 rounded bg-amber-700 hover:bg-amber-800 text-white text-[11px] font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer"
-                                title="Save changes"
+                                className="p-1.5 rounded-md bg-[#0F4C3A] hover:bg-[#15674F] text-white transition cursor-pointer shadow-2xs"
+                                title="Save Changes"
                               >
                                 {savingEditRow ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                 ) : (
                                   <Check className="w-3.5 h-3.5" />
                                 )}
-                                <span>Save</span>
                               </button>
                               <button
+                                type="button"
                                 onClick={cancelEditRow}
                                 disabled={savingEditRow}
-                                className="p-1 rounded hover:bg-slate-200 text-slate-500 transition cursor-pointer"
-                                title="Cancel edit"
+                                className="p-1.5 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 transition cursor-pointer"
+                                title="Cancel"
                               >
-                                <X className="w-4 h-4" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    return (
-                      <tr
-                        key={entry.id}
-                        className="hover:bg-slate-50/80 transition-colors divide-x divide-slate-200 group"
-                      >
-                        {/* Row Number */}
-                        <td className="w-14 px-3 py-2 text-center font-mono text-slate-400 bg-slate-50 group-hover:bg-slate-100 group-hover:text-slate-700 transition sticky left-0 z-10 text-[11px]">
-                          {rowIndex + 1}
-                        </td>
-
-                        {/* Configured Cells */}
-                        {activeFields.map((field) => (
-                          <td key={field.id} className="px-3.5 py-2 align-middle">
-                            {renderCellDisplay(field, entry)}
-                          </td>
-                        ))}
-
-                        {/* Actions Column */}
-                        <td className="px-3 py-2 text-center whitespace-nowrap sticky right-0 bg-white group-hover:bg-slate-50 z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => startEditRow(entry)}
-                              className="p-1 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition cursor-pointer"
-                              title="Edit Row"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEntryToDelete(entry);
-                                setDeleteModalOpen(true);
-                              }}
-                              className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition cursor-pointer"
-                              title="Delete Row"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1 text-slate-400">
+                              <button
+                                type="button"
+                                onClick={() => startEditRow(entry)}
+                                className="p-1.5 rounded hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                                title="Edit Row"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => confirmDeleteRow(entry)}
+                                className="p-1.5 rounded hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                                title="Delete Row"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1293,34 +1264,55 @@ export default function CounterCashLedgerPage() {
             </table>
           </div>
 
-          {/* 7. EXCEL / GOOGLE SHEETS FORMULA / STATUS BAR */}
-          <footer className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 select-none">
+          {/* 6. FORMULA SUMMARY STATUS BAR */}
+          <footer className="bg-slate-100/90 border-t border-slate-300 px-4 py-2.5 flex flex-wrap items-center justify-between gap-4 text-xs font-semibold text-slate-700 shrink-0">
+            {/* Left: Record Count & Formula Summary */}
             <div className="flex items-center gap-4">
-              <span className="font-semibold text-slate-700">
-                Count: <strong className="text-slate-900">{entries.length}</strong> records
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Count: <strong className="text-slate-900 font-mono">{summary.recordCount || entries.length}</strong> records
               </span>
 
-              {/* Total Invoice Amount Summary */}
-              <div className="flex items-center gap-2 pl-3 border-l border-slate-300">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  SUM (Total Invoice Amount):
-                </span>
-                <span className="font-mono font-bold text-sm text-[#0F4C3A]">
-                  ₹{(summary.totalInvoiceAmount || summary.totalCashReceived || 0).toLocaleString('en-IN', {
-                    minimumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
+              <span className="text-slate-300">|</span>
+
+              <span className="flex items-center gap-1.5 text-emerald-950 font-bold bg-white px-3 py-1 rounded-md border border-slate-200 shadow-2xs font-mono">
+                SUM (TOTAL INVOICE AMOUNT): ₹
+                {summary.totalInvoiceAmount.toLocaleString('en-IN', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+
+              {/* Any additional columns marked includeInTotal */}
+              {Object.entries(summary.columnTotals || {}).map(([key, sum]) => {
+                if (key === 'total_invoice_amount') return null;
+                const f = activeFields.find((col) => col.key === key);
+                return (
+                  <span
+                    key={key}
+                    className="flex items-center gap-1 text-slate-800 bg-white px-2.5 py-1 rounded border border-slate-200 font-mono text-[11px]"
+                  >
+                    SUM ({f?.name || key}): ₹
+                    {Number(sum).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                );
+              })}
             </div>
 
-            {/* Mode Breakdown Badges */}
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              {Object.entries(summary.modeTotals || {}).map(([mode, amt]) => (
+            {/* Right: Payment Mode Breakdown */}
+            <div className="flex items-center gap-3 text-[11px] overflow-x-auto">
+              <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                Modes:
+              </span>
+              {Object.entries(summary.modeTotals || {}).slice(0, 4).map(([mode, amt]) => (
                 <span
                   key={mode}
-                  className="px-2 py-0.5 rounded bg-white border border-slate-200 font-medium text-slate-700 shadow-2xs"
+                  className="bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-700 flex items-center gap-1 shadow-2xs font-mono"
                 >
-                  {mode}: <strong className="text-slate-900 font-mono">₹{amt.toLocaleString('en-IN')}</strong>
+                  <span className="font-semibold text-slate-500">{mode}:</span>
+                  <strong className="text-slate-900">
+                    ₹{Number(amt).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                  </strong>
                 </span>
               ))}
             </div>
@@ -1328,7 +1320,7 @@ export default function CounterCashLedgerPage() {
         </div>
       </main>
 
-      {/* 8. DELETE CONFIRMATION MODAL */}
+      {/* 7. DELETE CONFIRMATION MODAL */}
       {deleteModalOpen && entryToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
@@ -1336,7 +1328,7 @@ export default function CounterCashLedgerPage() {
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
                 <Trash2 className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900">Delete this ledger entry?</h3>
+              <h3 className="text-base font-bold text-slate-900">Delete this collection entry?</h3>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed mb-4">
@@ -1348,19 +1340,19 @@ export default function CounterCashLedgerPage() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Customer Name:</span>
                 <strong className="text-slate-800">
-                  {extractRowFieldValue(entryToDelete.data, entryToDelete, 'customer_name') || '-'}
+                  {extractSalesPaymentRowValue(entryToDelete.data, entryToDelete, 'customer_name') || '-'}
                 </strong>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Invoice Number:</span>
                 <span className="font-mono text-slate-700">
-                  {extractRowFieldValue(entryToDelete.data, entryToDelete, 'invoice_number') || '-'}
+                  {extractSalesPaymentRowValue(entryToDelete.data, entryToDelete, 'invoice_number') || '-'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Total Invoice Amount:</span>
                 <strong className="text-emerald-700 font-mono">
-                  ₹{Number(extractRowFieldValue(entryToDelete.data, entryToDelete, 'total_invoice_amount') || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{Number(extractSalesPaymentRowValue(entryToDelete.data, entryToDelete, 'total_invoice_amount') || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </strong>
               </div>
             </div>
@@ -1389,7 +1381,7 @@ export default function CounterCashLedgerPage() {
         </div>
       )}
 
-      {/* 9. ORGANIZATION ADMIN COLUMN BUILDER MODAL (GOOGLE FORMS STYLE) */}
+      {/* 8. ORGANIZATION ADMIN COLUMN BUILDER MODAL (GOOGLE FORMS STYLE) */}
       {isCustomizingColumns && isOrgAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-fadeIn">
           <div className="bg-[#F8FAFC] rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-300 overflow-hidden my-auto">
@@ -1401,7 +1393,9 @@ export default function CounterCashLedgerPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-slate-900">Organization Ledger Field Builder</h2>
+                    <h2 className="text-base font-bold text-slate-900">
+                      Sales Payment Collection Ledger Field Builder
+                    </h2>
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                       Organization Admin
                     </span>
@@ -1412,15 +1406,13 @@ export default function CounterCashLedgerPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsCustomizingColumns(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                  title="Close"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              <button
+                onClick={() => setIsCustomizingColumns(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             {/* Modal Sub-Header Toolbar */}
@@ -1455,6 +1447,8 @@ export default function CounterCashLedgerPage() {
             <div className="p-6 overflow-y-auto space-y-5 flex-1 bg-slate-100/60">
               {builderFields.map((field, index) => {
                 const isSelection = ['DROPDOWN', 'MULTIPLE_CHOICE', 'CHECKBOX'].includes(field.type);
+                const isNumeric = field.type === 'CURRENCY' || field.type === 'NUMBER';
+
                 return (
                   <div
                     key={field.id}
@@ -1513,7 +1507,7 @@ export default function CounterCashLedgerPage() {
                           type="text"
                           value={field.name}
                           onChange={(e) => updateBuilderField(field.id, { name: e.target.value })}
-                          placeholder="e.g. Sales Executive"
+                          placeholder="e.g. Total Invoice Amount"
                           className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 outline-none"
                         />
                       </div>
@@ -1526,7 +1520,7 @@ export default function CounterCashLedgerPage() {
                         <select
                           value={field.type}
                           onChange={(e) =>
-                            updateBuilderField(field.id, { type: e.target.value as LedgerFieldType })
+                            updateBuilderField(field.id, { type: e.target.value as SalesPaymentFieldType })
                           }
                           className="w-full bg-white border border-slate-300 focus:border-[#0F4C3A] rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 outline-none cursor-pointer"
                         >
@@ -1556,6 +1550,29 @@ export default function CounterCashLedgerPage() {
                         </button>
                       </div>
                     </div>
+
+                    {/* Numeric Setting: Include in Ledger Total */}
+                    {isNumeric && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 p-2.5 rounded text-xs">
+                        <div>
+                          <strong className="text-slate-800">Include in Ledger Total</strong>
+                          <p className="text-[11px] text-slate-500">
+                            Calculate SUM total for this column in the formula bar and exports
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateBuilderField(field.id, { includeInTotal: !field.includeInTotal })}
+                          className={`px-3 py-1 rounded text-xs font-bold border transition cursor-pointer ${
+                            field.includeInTotal
+                              ? 'bg-emerald-600 text-white border-emerald-700'
+                              : 'bg-white text-slate-600 border-slate-300'
+                          }`}
+                        >
+                          {field.includeInTotal ? 'YES' : 'NO'}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Contextual Options Builder for DROPDOWN, MULTIPLE_CHOICE, CHECKBOX */}
                     {isSelection && (
@@ -1632,7 +1649,7 @@ export default function CounterCashLedgerPage() {
                                 handleAddOptionToField(field.id);
                               }
                             }}
-                            placeholder="Add option name (e.g. UPI, CASH)..."
+                            placeholder="Add option name (e.g. CASH, NEFT)..."
                             className="flex-1 bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 outline-none"
                           />
                           <button
@@ -1642,20 +1659,6 @@ export default function CounterCashLedgerPage() {
                           >
                             + Add Option
                           </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Contextual Currency Settings */}
-                    {field.type === 'CURRENCY' && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs bg-slate-50 p-2.5 rounded">
-                        <div>
-                          <span className="text-slate-500 font-semibold block mb-0.5">Currency</span>
-                          <span className="font-bold text-slate-900">INR ₹ (Indian Rupee)</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 font-semibold block mb-0.5">Decimal Places</span>
-                          <span className="font-bold text-slate-900">2 Decimals</span>
                         </div>
                       </div>
                     )}
@@ -1676,7 +1679,7 @@ export default function CounterCashLedgerPage() {
                       </div>
                     )}
 
-                    {/* Live Interactive Preview Box */}
+                    {/* Live Preview Box */}
                     <div className="mt-3 pt-3 border-t border-slate-100">
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                         <Eye className="w-3.5 h-3.5 text-slate-400" />
@@ -1754,7 +1757,7 @@ export default function CounterCashLedgerPage() {
             {/* Modal Sticky Footer */}
             <div className="bg-white border-t border-slate-200 px-6 py-3.5 flex items-center justify-between gap-3 shrink-0">
               <span className="text-xs text-slate-500 hidden sm:inline">
-                Changes will be saved immediately to {organizationName}&apos;s ledger.
+                Changes will be saved immediately to {organizationName}&apos;s Sales Payment Collection Ledger.
               </span>
 
               <div className="flex items-center gap-2.5 ml-auto">

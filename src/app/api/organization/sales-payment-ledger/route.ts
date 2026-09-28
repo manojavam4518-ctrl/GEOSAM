@@ -3,16 +3,17 @@ import { prisma } from '@/lib/prisma';
 import { verifyModuleAccess } from '@/lib/modulePermissions';
 import { recordAuditLog } from '@/lib/audit';
 import {
-  getOrganizationLedgerConfig,
-  calculateLedgerBalances,
-  validateLedgerEntryData,
-  extractRowFieldValue,
+  getOrganizationSalesPaymentLedgerConfig,
+  calculateSalesPaymentLedgerTotals,
+  validateSalesPaymentEntryData,
+  extractSalesPaymentRowValue,
   getCurrentMonthYearString,
-} from '@/lib/cashLedger';
+  SALES_PAYMENT_LEDGER_MODULE_KEY,
+} from '@/lib/salesPaymentLedger';
 
 export async function GET(req: NextRequest) {
   try {
-    const access = await verifyModuleAccess(req, 'COUNTER_CASH_LEDGER');
+    const access = await verifyModuleAccess(req, SALES_PAYMENT_LEDGER_MODULE_KEY);
     if (!access.authorized) {
       return access.response || NextResponse.json({ error: 'Access denied.' }, { status: 403 });
     }
@@ -65,20 +66,20 @@ export async function GET(req: NextRequest) {
     };
 
     const [config, rawEntries] = await Promise.all([
-      getOrganizationLedgerConfig(organizationId),
-      (prisma as any).cashLedgerEntry.findMany({
+      getOrganizationSalesPaymentLedgerConfig(organizationId),
+      (prisma as any).salesPaymentLedgerEntry.findMany({
         where,
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
 
-    // Normalize each entry's row data using extractRowFieldValue so no historical field is lost
+    // Normalize each entry's row data using extractSalesPaymentRowValue
     let filteredEntries = rawEntries.map((e: any) => {
-      const rawData = (e.data as Record<string, any>) || (e.customFields as Record<string, any>) || {};
+      const rawData = (e.data as Record<string, any>) || {};
       const normalizedData: Record<string, any> = { ...rawData };
 
       config.fields.forEach((f) => {
-        normalizedData[f.key] = extractRowFieldValue(rawData, e, f.key);
+        normalizedData[f.key] = extractSalesPaymentRowValue(rawData, e, f.key);
       });
 
       return {
@@ -87,14 +88,16 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Apply Search across all columns
+    // Apply Search across configured columns and text
     if (search) {
       const lowerSearch = search.toLowerCase();
       filteredEntries = filteredEntries.filter((entry: any) => {
         if (
-          entry.receivedFrom?.toLowerCase().includes(lowerSearch) ||
-          entry.paidTo?.toLowerCase().includes(lowerSearch) ||
-          entry.purpose?.toLowerCase().includes(lowerSearch) ||
+          entry.customerName?.toLowerCase().includes(lowerSearch) ||
+          entry.invoiceNumber?.toLowerCase().includes(lowerSearch) ||
+          entry.customerType?.toLowerCase().includes(lowerSearch) ||
+          entry.paymentReceivedMode?.toLowerCase().includes(lowerSearch) ||
+          entry.chequeClearanceStatus?.toLowerCase().includes(lowerSearch) ||
           entry.remarks?.toLowerCase().includes(lowerSearch) ||
           entry.createdByName?.toLowerCase().includes(lowerSearch)
         ) {
@@ -111,54 +114,40 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Apply dynamic column filters (e.g. customer_type, payment_received_mode, cheque_clearance_status)
-    searchParams.forEach((value, paramKey) => {
-      if (
-        !['preset', 'startDate', 'endDate', 'search'].includes(paramKey) &&
-        value &&
-        value !== 'ALL'
-      ) {
-        filteredEntries = filteredEntries.filter((e: any) => {
-          const cellVal = extractRowFieldValue(e.data, e, paramKey);
-          return String(cellVal).toUpperCase() === String(value).toUpperCase();
+    // Apply column dropdown filters
+    for (const [paramKey, paramVal] of searchParams.entries()) {
+      if (['preset', 'startDate', 'endDate', 'search'].includes(paramKey)) continue;
+      if (paramVal && paramVal !== 'ALL') {
+        filteredEntries = filteredEntries.filter((entry: any) => {
+          const cellVal = extractSalesPaymentRowValue(entry.data, entry, paramKey);
+          return String(cellVal).toUpperCase() === paramVal.toUpperCase();
         });
       }
-    });
+    }
 
-    // Sort chronologically for running balance calculation
-    const chronologicalEntries = [...filteredEntries].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    const { entries: computedEntries, summary } = calculateLedgerBalances(
-      chronologicalEntries,
-      config.fields,
-      config.initialCashInHand
-    );
-
-    const displayEntries = [...computedEntries].reverse();
+    // Compute Formula Totals & Mode Breakdowns
+    const summary = calculateSalesPaymentLedgerTotals(filteredEntries, config.fields);
 
     return NextResponse.json({
       success: true,
-      entries: displayEntries,
+      entries: filteredEntries,
       columns: config.columns,
       fields: config.fields,
       summary,
       config: {
         id: config.id,
-        initialCashInHand: config.initialCashInHand,
         updatedAt: config.updatedAt,
       },
     });
   } catch (error: any) {
-    console.error('Cash Ledger GET Error:', error);
+    console.error('Sales Payment Ledger GET Error:', error);
     return NextResponse.json({ error: 'Server error: ' + error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const access = await verifyModuleAccess(req, 'COUNTER_CASH_LEDGER');
+    const access = await verifyModuleAccess(req, SALES_PAYMENT_LEDGER_MODULE_KEY);
     if (!access.authorized) {
       return access.response || NextResponse.json({ error: 'Access denied.' }, { status: 403 });
     }
@@ -172,20 +161,22 @@ export async function POST(req: NextRequest) {
     const rowData: Record<string, any> = body.data || body;
 
     // Load active ledger configuration
-    const config = await getOrganizationLedgerConfig(organizationId);
+    const config = await getOrganizationSalesPaymentLedgerConfig(organizationId);
 
     // Strict backend validation for required fields
-    const validation = validateLedgerEntryData(rowData, config.fields);
+    const validation = validateSalesPaymentEntryData(rowData, config.fields);
     if (!validation.valid) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Extract values safely
-    const customerName = extractRowFieldValue(rowData, rowData, 'customer_name');
-    const invoiceNumber = extractRowFieldValue(rowData, rowData, 'invoice_number');
-    const invoiceMonth = extractRowFieldValue(rowData, rowData, 'invoice_month');
-    const paymentMode = extractRowFieldValue(rowData, rowData, 'payment_received_mode');
-    const totalAmount = Number(extractRowFieldValue(rowData, rowData, 'total_invoice_amount')) || 0;
+    // Extract typed field values
+    const customerName = extractSalesPaymentRowValue(rowData, rowData, 'customer_name');
+    const invoiceNumber = extractSalesPaymentRowValue(rowData, rowData, 'invoice_number');
+    const invoiceMonth = extractSalesPaymentRowValue(rowData, rowData, 'invoice_month');
+    const customerType = extractSalesPaymentRowValue(rowData, rowData, 'customer_type');
+    const paymentMode = extractSalesPaymentRowValue(rowData, rowData, 'payment_received_mode');
+    const chequeStatus = extractSalesPaymentRowValue(rowData, rowData, 'cheque_clearance_status');
+    const totalAmount = Number(extractSalesPaymentRowValue(rowData, rowData, 'total_invoice_amount')) || 0;
 
     let entryDate = new Date();
     if (rowData.date) {
@@ -205,27 +196,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const newEntry = await (prisma as any).cashLedgerEntry.create({
+    const newEntry = await (prisma as any).salesPaymentLedgerEntry.create({
       data: {
         organizationId,
         createdById: access.user.id,
         createdByName: access.user.name,
         date: entryDate,
-        cashReceived: totalAmount,
-        receivedFrom: customerName || null,
-        purpose: invoiceNumber || null,
-        paidTo: rowData.paidTo || null,
-        paidAmount: Number(rowData.paidAmount) || 0,
-        bankDeposit: Number(rowData.bankDeposit) || 0,
+        invoiceMonth: invoiceMonth || null,
+        customerType: customerType || null,
+        customerName: customerName || null,
+        invoiceNumber: invoiceNumber || null,
+        totalInvoiceAmount: totalAmount,
+        paymentReceivedMode: paymentMode || null,
+        chequeClearanceStatus: chequeStatus || null,
         remarks: rowData.remarks || null,
         data: rowData,
-        customFields: rowData,
       },
     });
 
-    // Record audit log
     await recordAuditLog({
-      action: 'CASH_LEDGER_ROW_CREATED',
+      action: 'SALES_PAYMENT_LEDGER_ROW_CREATED',
       userId: access.user.id,
       userEmail: access.user.email,
       organizationId,
@@ -233,10 +223,12 @@ export async function POST(req: NextRequest) {
       metadata: {
         date: newEntry.date,
         invoiceMonth,
+        customerType,
         customerName,
         invoiceNumber,
         totalInvoiceAmount: totalAmount,
         paymentReceivedMode: paymentMode,
+        chequeClearanceStatus: chequeStatus,
       },
     });
 
@@ -249,7 +241,7 @@ export async function POST(req: NextRequest) {
       message: 'Ledger entry saved successfully.',
     });
   } catch (error: any) {
-    console.error('Cash Ledger POST Error:', error);
+    console.error('Sales Payment Ledger POST Error:', error);
     return NextResponse.json({ error: 'Server error: ' + error.message }, { status: 500 });
   }
 }

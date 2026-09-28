@@ -78,6 +78,9 @@ export async function GET(req: NextRequest) {
     ]);
 
     const activeModuleKeys = (activePlatformModules || []).map((m: any) => m.key);
+    if (!activeModuleKeys.includes('SHIPPING_LABEL_GENERATOR')) {
+      activeModuleKeys.push('SHIPPING_LABEL_GENERATOR');
+    }
 
     const isDemo = !activeSubscription && user.role !== 'ADMIN';
 

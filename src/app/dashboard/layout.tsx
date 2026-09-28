@@ -32,6 +32,8 @@ import {
   DollarSign,
   Lock,
   WalletCards,
+  Receipt,
+  QrCode,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -154,6 +156,8 @@ export default function DashboardLayout({
               { name: 'Employee Directory', path: '/dashboard/employees', icon: Users, moduleKey: 'EMPLOYEE_MANAGEMENT' },
               { name: 'Attendance Register', path: '/dashboard/attendance', icon: Calendar, moduleKey: 'ATTENDANCE' },
               { name: 'Payroll & Salary Slips', path: '/dashboard/payroll', icon: DollarSign, moduleKey: 'PAYROLL' },
+              { name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
+              { name: 'Sales Payment Collection Ledger', path: '/dashboard/sales-payment-ledger', icon: Receipt, moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER' },
               { name: 'User Accounts', path: '/dashboard/users', icon: UserCheck },
             ],
           },
@@ -163,11 +167,13 @@ export default function DashboardLayout({
           {
             title: 'ORGANIZATION',
             items: [
+              { name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
+              { name: 'Sales Payment Collection Ledger', path: '/dashboard/sales-payment-ledger', icon: Receipt, moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER' },
               { name: 'User Accounts', path: '/dashboard/users', icon: UserCheck },
             ],
           },
         ]
-      : isAdditionalUser && (assignedModules.includes('EMPLOYEE_MANAGEMENT') || assignedModules.includes('ATTENDANCE') || assignedModules.includes('PAYROLL'))
+      : isAdditionalUser && (assignedModules.includes('EMPLOYEE_MANAGEMENT') || assignedModules.includes('ATTENDANCE') || assignedModules.includes('PAYROLL') || assignedModules.includes('COUNTER_CASH_LEDGER') || assignedModules.includes('SALES_PAYMENT_COLLECTION_LEDGER'))
       ? [
           {
             title: 'ORGANIZATION',
@@ -181,6 +187,12 @@ export default function DashboardLayout({
               ...(assignedModules.includes('PAYROLL')
                 ? [{ name: 'Payroll & Salary Slips', path: '/dashboard/payroll', icon: DollarSign, moduleKey: 'PAYROLL' }]
                 : []),
+              ...(assignedModules.includes('COUNTER_CASH_LEDGER')
+                ? [{ name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' }]
+                : []),
+              ...(assignedModules.includes('SALES_PAYMENT_COLLECTION_LEDGER')
+                ? [{ name: 'Sales Payment Collection Ledger', path: '/dashboard/sales-payment-ledger', icon: Receipt, moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER' }]
+                : []),
             ],
           },
         ]
@@ -192,7 +204,7 @@ export default function DashboardLayout({
         { name: 'Weight Calculator', path: '/dashboard/calculator', icon: Scale, moduleKey: 'WEIGHT_CALCULATOR' },
         { name: 'Rate Calculator', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
         { name: 'Rate Cards', path: '/dashboard/rate-cards', icon: Tags, moduleKey: 'RATE_CARDS' },
-        { name: 'Counter Cash Ledger', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
+        { name: 'Shipping Label Generator', path: '/dashboard/shipping-labels', icon: QrCode, moduleKey: 'SHIPPING_LABEL_GENERATOR' },
         { name: 'Pincode Search', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
         { name: 'Tracker', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
         { name: 'Sales Follow-Up', path: '/dashboard/sales-follow-up', icon: UserCheck, moduleKey: 'SALES_FOLLOW_UP' },
@@ -713,6 +725,8 @@ export default function DashboardLayout({
                 { pathPrefix: '/dashboard/attendance', moduleKey: 'ATTENDANCE', name: 'Attendance Register' },
                 { pathPrefix: '/dashboard/payroll', moduleKey: 'PAYROLL', name: 'Payroll & Salary Slips' },
                 { pathPrefix: '/dashboard/cash-ledger', moduleKey: 'COUNTER_CASH_LEDGER', name: 'Counter Cash Ledger' },
+                { pathPrefix: '/dashboard/sales-payment-ledger', moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER', name: 'Sales Payment Collection Ledger' },
+                { pathPrefix: '/dashboard/shipping-labels', moduleKey: 'SHIPPING_LABEL_GENERATOR', name: 'Shipping Label Generator' },
               ];
 
               if (user?.role !== 'ADMIN' && activeModuleKeys.length > 0) {
@@ -784,6 +798,8 @@ export default function DashboardLayout({
                   { pathPrefix: '/dashboard/attendance', moduleKey: 'ATTENDANCE', name: 'Attendance Register' },
                   { pathPrefix: '/dashboard/payroll', moduleKey: 'PAYROLL', name: 'Payroll & Salary Slips' },
                   { pathPrefix: '/dashboard/cash-ledger', moduleKey: 'COUNTER_CASH_LEDGER', name: 'Counter Cash Ledger' },
+                  { pathPrefix: '/dashboard/sales-payment-ledger', moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER', name: 'Sales Payment Collection Ledger' },
+                  { pathPrefix: '/dashboard/shipping-labels', moduleKey: 'SHIPPING_LABEL_GENERATOR', name: 'Shipping Label Generator' },
                   { pathPrefix: '/dashboard/users', moduleKey: 'USER_ACCOUNTS', name: 'User Accounts' },
                 ];
 

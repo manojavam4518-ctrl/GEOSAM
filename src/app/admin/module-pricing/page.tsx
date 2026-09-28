@@ -411,12 +411,12 @@ export default function AdminModulePricingPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         {mod.key === 'COUNTER_CASH_LEDGER' && (
                           <a
-                            href="/dashboard/cash-ledger"
+                            href="/admin/cash-ledger"
                             className="py-1.5 px-3 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold transition inline-flex items-center gap-1 cursor-pointer"
-                            title="Super Admin: Configure Ledger Columns & Structure"
+                            title="Super Admin: Customize Ledger Fields (Google Forms-style builder)"
                           >
                             <Settings className="w-3 h-3 text-amber-700" />
-                            Columns & Ledger
+                            Customize Fields
                           </a>
                         )}
                         <button

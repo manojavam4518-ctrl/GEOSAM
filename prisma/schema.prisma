@@ -33,6 +33,9 @@ model Organization {
   subscriptions  Subscription[]
   cashLedgerConfig CashLedgerConfig?
   cashLedgerEntries CashLedgerEntry[]
+  salesPaymentLedgerConfig SalesPaymentLedgerConfig?
+  salesPaymentLedgerEntries SalesPaymentLedgerEntry[]
+  shippingLabels   ShippingLabel[]
 }
 
 model User {
@@ -856,6 +859,15 @@ model PlatformRole {
   updatedAt   DateTime @updatedAt
 }
 
+model PlatformLedgerConfig {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique @default("COUNTER_CASH_LEDGER")
+  name      String   @default("Counter Cash Ledger")
+  fields    Json     // Dynamic field definitions configured by Super Admin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model CashLedgerConfig {
   id                String       @id @default(auto()) @map("_id") @db.ObjectId
   organizationId    String       @unique @db.ObjectId
@@ -881,6 +893,7 @@ model CashLedgerEntry {
   bankDeposit    Float        @default(0.0)
   cashInHand     Float        @default(0.0)
   remarks        String?
+  data           Json?        // Dynamic cell values map for all configured columns
   customFields   Json?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -889,3 +902,108 @@ model CashLedgerEntry {
   @@index([date])
   @@index([organizationId, date])
 }
+
+model SalesPaymentLedgerConfig {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @unique @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  columns        Json?        // Array of dynamic column definitions configured by Org Admin
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model SalesPaymentLedgerEntry {
+  id                    String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId        String       @db.ObjectId
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById           String?      @db.ObjectId
+  createdByName         String?
+  date                  DateTime     @default(now())
+  invoiceMonth          String?      // e.g. "APRIL_2026"
+  customerType          String?      // "CREDIT CUSTOMER" | "CASH CUSTOMER"
+  customerName          String?
+  invoiceNumber         String?
+  totalInvoiceAmount    Float        @default(0.0)
+  paymentReceivedMode   String?      // CHEQUE, NEFT/IMPS, etc.
+  chequeClearanceStatus String?      // CREDITED, CHEQUE BOUNCE, PENDING
+  remarks               String?
+  data                  Json?        // Dynamic cell values map for all configured columns
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([date])
+  @@index([organizationId, date])
+}
+
+model ShippingLabelTemplate {
+  id            String          @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  description   String?
+  isDefault     Boolean         @default(false)
+  isActive      Boolean         @default(true)
+  version       Int             @default(1)
+  sizePreset    String          @default("4x6") // "4x6", "A6", "CUSTOM"
+  widthInches   Float           @default(4.0)
+  heightInches  Float           @default(6.0)
+  widthMm       Float           @default(101.6)
+  heightMm      Float           @default(152.4)
+  orientation   String          @default("PORTRAIT") // "PORTRAIT", "LANDSCAPE"
+  logoUrl       String?
+  logoPosition  String          @default("TOP_RIGHT") // "TOP_RIGHT", "TOP_LEFT", "TOP_CENTER"
+  logoWidth     Float           @default(110.0)
+  logoHeight    Float           @default(45.0)
+  headerText    String?
+  footerText    String?
+  borderStyle   String          @default("SOLID") // "SOLID", "THICK", "NONE"
+  qrConfig      Json?
+  barcodeConfig Json?
+  fields        Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  labels        ShippingLabel[]
+}
+
+model ShippingLabel {
+  id               String                @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId   String                @db.ObjectId
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templateId       String                @db.ObjectId
+  template         ShippingLabelTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateSnapshot Json?                 // Complete snapshot of template config at generation time
+  createdById      String?               @db.ObjectId
+  createdByName    String?
+  trackingNumber   String
+  recipientName    String?
+  recipientMobile  String?
+  recipientCity    String?
+  recipientState   String?
+  recipientPincode String?
+  recipientAddress String?
+  service          String?
+  serviceType      String?
+  originCode       String?
+  destinationCode  String?
+  paymentStatus    String?               // PREPAID, COD, TO PAY, PARTIAL
+  amountToCollect  Float                 @default(0.0)
+  weight           Float?
+  packageCount     String?               // e.g. "001 / 001"
+  routeLocation    String?
+  mode             String?               // SURFACE, AIR, EXPRESS
+  shipmentDate     DateTime?             @default(now())
+  shipmentTime     String?
+  status           String                @default("GENERATED") // GENERATED, PRINTED, CANCELLED
+  qrData           String?
+  barcodeData      String?
+  labelData        Json?                 // Dynamic key-value pairs for all configured template fields
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([organizationId])
+  @@index([trackingNumber])
+  @@index([organizationId, createdAt])
+  @@index([templateId])
+}
+
+

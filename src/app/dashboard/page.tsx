@@ -18,6 +18,8 @@ import {
   Package,
   UserCheck,
   WalletCards,
+  Receipt,
+  QrCode,
 } from 'lucide-react';
 import LogisticsEcosystemVisual from '@/components/logistics/LogisticsEcosystemVisual';
 import ShipmentIntelligenceVisual from '@/components/logistics/ShipmentIntelligenceVisual';
@@ -62,6 +64,8 @@ export default function DashboardHome() {
     { title: 'Weight Calculator', desc: 'Compute raw and volumetric cargo weights', path: '/dashboard/calculator', icon: Scale, moduleKey: 'WEIGHT_CALCULATOR' },
     { title: 'Rate Calculator', desc: 'Compare contract rates across system and custom slabs', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
     { title: 'Counter Cash Ledger', desc: 'Daily office & counter cash register, receipts, and bank deposits', path: '/dashboard/cash-ledger', icon: WalletCards, moduleKey: 'COUNTER_CASH_LEDGER' },
+    { title: 'Shipping Label Generator', desc: 'Create thermal shipping labels with scannable QR and CODE128 barcodes', path: '/dashboard/shipping-labels', icon: QrCode, moduleKey: 'SHIPPING_LABEL_GENERATOR' },
+    { title: 'Sales Payment Collection Ledger', desc: 'Track customer invoices, payment modes, cheque clearance, and collection entries', path: '/dashboard/sales-payment-ledger', icon: Receipt, moduleKey: 'SALES_PAYMENT_COLLECTION_LEDGER' },
     { title: 'Calculation History', desc: 'View and export recent cargo weight evaluations', path: '/dashboard/history', icon: History, moduleKey: 'CALCULATION_HISTORY' },
     { title: 'Quotations', desc: 'Manage generated client quotes and invoices', path: '/dashboard/quotations', icon: FileText, moduleKey: 'QUOTATIONS' },
     { title: 'Sales Follow-Up', desc: 'Track customer leads, quotes & follow-up actions', path: '/dashboard/sales-follow-up', icon: UserCheck, moduleKey: 'SALES_FOLLOW_UP' },

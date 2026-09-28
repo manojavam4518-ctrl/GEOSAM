@@ -3,15 +3,16 @@ import { prisma } from '@/lib/prisma';
 import { verifyModuleAccess } from '@/lib/modulePermissions';
 import { recordAuditLog } from '@/lib/audit';
 import {
-  getOrganizationLedgerConfig,
-  normalizeFieldConfig,
-  LedgerFieldConfig,
-  REFERENCE_LEDGER_FIELDS,
-} from '@/lib/cashLedger';
+  getOrganizationSalesPaymentLedgerConfig,
+  normalizeSalesPaymentField,
+  SalesPaymentFieldConfig,
+  REFERENCE_SALES_PAYMENT_FIELDS,
+  SALES_PAYMENT_LEDGER_MODULE_KEY,
+} from '@/lib/salesPaymentLedger';
 
 export async function GET(req: NextRequest) {
   try {
-    const access = await verifyModuleAccess(req, 'COUNTER_CASH_LEDGER');
+    const access = await verifyModuleAccess(req, SALES_PAYMENT_LEDGER_MODULE_KEY);
     if (!access.authorized) {
       return access.response || NextResponse.json({ error: 'Access denied.' }, { status: 403 });
     }
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     }
 
     const isOrgAdmin = ['ORG_ADMIN', 'OWNER', 'ADMIN'].includes(access.user.role);
-    const config = await getOrganizationLedgerConfig(organizationId);
+    const config = await getOrganizationSalesPaymentLedgerConfig(organizationId);
 
     return NextResponse.json({
       success: true,
@@ -32,25 +33,24 @@ export async function GET(req: NextRequest) {
       isOrgAdmin,
     });
   } catch (error: any) {
-    console.error('Cash Ledger Config GET Error:', error);
+    console.error('Sales Payment Ledger Config GET Error:', error);
     return NextResponse.json({ error: 'Server error: ' + error.message }, { status: 500 });
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
-    const access = await verifyModuleAccess(req, 'COUNTER_CASH_LEDGER');
+    const access = await verifyModuleAccess(req, SALES_PAYMENT_LEDGER_MODULE_KEY);
     if (!access.authorized) {
       return access.response || NextResponse.json({ error: 'Access denied.' }, { status: 403 });
     }
 
-    // Permission check: Only Organization Admin (ORG_ADMIN, OWNER, or platform ADMIN) can configure ledger columns.
-    // Standard company users (USER) cannot modify ledger columns.
+    // Strict Permission check: Only Organization Admin (ORG_ADMIN, OWNER, or platform ADMIN) can configure columns.
     const isOrgAdmin = ['ORG_ADMIN', 'OWNER', 'ADMIN'].includes(access.user.role);
     if (!isOrgAdmin) {
       return NextResponse.json(
         {
-          error: 'Forbidden: Only Organization Admin can configure ledger columns.',
+          error: 'Forbidden: Only Organization Admin can configure Sales Payment Collection Ledger columns.',
           code: 'ORG_ADMIN_REQUIRED',
         },
         { status: 403 }
@@ -58,10 +58,10 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { fields, columns, initialCashInHand, targetOrganizationId } = body;
+    const { fields, columns, targetOrganizationId } = body;
 
     // Strict multi-tenant isolation:
-    // Non-platform-admins can strictly only configure their own organizationId.
+    // Non-platform admins can strictly only configure their own organizationId.
     const organizationId =
       access.user.role === 'ADMIN' && targetOrganizationId
         ? targetOrganizationId
@@ -76,39 +76,34 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Ledger must contain at least one field.' }, { status: 400 });
     }
 
-    const sanitizedFields: LedgerFieldConfig[] = rawFields.map((f: any, idx: number) =>
-      normalizeFieldConfig(f, idx)
+    const sanitizedFields: SalesPaymentFieldConfig[] = rawFields.map((f: any, idx: number) =>
+      normalizeSalesPaymentField(f, idx)
     );
 
     sanitizedFields.forEach((f, idx) => {
       f.order = idx;
     });
 
-    const initialCash = initialCashInHand !== undefined ? Math.max(0, Number(initialCashInHand) || 0) : 0;
-
-    const updatedConfig = await (prisma as any).cashLedgerConfig.upsert({
+    const updatedConfig = await (prisma as any).salesPaymentLedgerConfig.upsert({
       where: { organizationId },
       update: {
         columns: sanitizedFields,
-        initialCashInHand: initialCash,
       },
       create: {
         organizationId,
         columns: sanitizedFields,
-        initialCashInHand: initialCash,
       },
     });
 
     await recordAuditLog({
-      action: 'ORGANIZATION_CASH_LEDGER_CONFIG_UPDATED',
+      action: 'SALES_PAYMENT_LEDGER_CONFIG_UPDATED',
       userId: access.user.id,
       userEmail: access.user.email,
       organizationId,
       relatedRecordId: updatedConfig.id,
       metadata: {
         fieldCount: sanitizedFields.length,
-        initialCashInHand: initialCash,
-        fields: sanitizedFields.map((f) => ({ key: f.key, name: f.name, active: f.active })),
+        fields: sanitizedFields.map((f) => ({ key: f.key, name: f.name, active: f.active, type: f.type })),
       },
     });
 
@@ -117,17 +112,17 @@ export async function PUT(req: NextRequest) {
       config: updatedConfig,
       fields: sanitizedFields,
       columns: sanitizedFields,
-      message: 'Organization ledger configuration updated successfully.',
+      message: 'Sales Payment Collection Ledger configuration updated successfully.',
     });
   } catch (error: any) {
-    console.error('Cash Ledger Config PUT Error:', error);
+    console.error('Sales Payment Ledger Config PUT Error:', error);
     return NextResponse.json({ error: 'Server error: ' + error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const access = await verifyModuleAccess(req, 'COUNTER_CASH_LEDGER');
+    const access = await verifyModuleAccess(req, SALES_PAYMENT_LEDGER_MODULE_KEY);
     if (!access.authorized) {
       return access.response || NextResponse.json({ error: 'Access denied.' }, { status: 403 });
     }
@@ -153,38 +148,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Organization context missing.' }, { status: 400 });
     }
 
-    const updatedConfig = await (prisma as any).cashLedgerConfig.upsert({
+    const updatedConfig = await (prisma as any).salesPaymentLedgerConfig.upsert({
       where: { organizationId },
       update: {
-        columns: REFERENCE_LEDGER_FIELDS,
+        columns: REFERENCE_SALES_PAYMENT_FIELDS,
       },
       create: {
         organizationId,
-        columns: REFERENCE_LEDGER_FIELDS,
-        initialCashInHand: 0,
+        columns: REFERENCE_SALES_PAYMENT_FIELDS,
       },
     });
 
     await recordAuditLog({
-      action: 'ORGANIZATION_CASH_LEDGER_CONFIG_RESET',
+      action: 'SALES_PAYMENT_LEDGER_CONFIG_RESET',
       userId: access.user.id,
       userEmail: access.user.email,
       organizationId,
       relatedRecordId: updatedConfig.id,
       metadata: {
-        fieldCount: REFERENCE_LEDGER_FIELDS.length,
+        fieldCount: REFERENCE_SALES_PAYMENT_FIELDS.length,
       },
     });
 
     return NextResponse.json({
       success: true,
       config: updatedConfig,
-      fields: REFERENCE_LEDGER_FIELDS,
-      columns: REFERENCE_LEDGER_FIELDS,
-      message: 'Ledger columns reset to reference defaults successfully.',
+      fields: REFERENCE_SALES_PAYMENT_FIELDS,
+      columns: REFERENCE_SALES_PAYMENT_FIELDS,
+      message: 'Sales Payment Collection Ledger reset to reference defaults successfully.',
     });
   } catch (error: any) {
-    console.error('Cash Ledger Config Reset Error:', error);
+    console.error('Sales Payment Ledger Config Reset Error:', error);
     return NextResponse.json({ error: 'Server error: ' + error.message }, { status: 500 });
   }
 }

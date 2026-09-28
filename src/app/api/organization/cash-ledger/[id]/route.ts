@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyModuleAccess } from '@/lib/modulePermissions';
 import { recordAuditLog } from '@/lib/audit';
+import { getOrganizationLedgerConfig, validateLedgerEntryData, extractRowFieldValue } from '@/lib/cashLedger';
 
 export async function PUT(
   req: NextRequest,
@@ -19,6 +20,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Organization context missing.' }, { status: 400 });
     }
 
+    // Verify organization ownership
     const existing = await (prisma as any).cashLedgerEntry.findUnique({
       where: { id },
     });
@@ -28,48 +30,72 @@ export async function PUT(
     }
 
     const body = await req.json();
-    const {
-      date,
-      cashReceived,
-      receivedFrom,
-      purpose,
-      paidTo,
-      paidAmount,
-      bankDeposit,
-      remarks,
-      customFields,
-    } = body;
+    const rowData: Record<string, any> = body.data || body;
 
-    const updatedData: any = {};
-    if (date !== undefined) updatedData.date = new Date(date);
-    if (cashReceived !== undefined) updatedData.cashReceived = Math.max(0, Number(cashReceived) || 0);
-    if (receivedFrom !== undefined) updatedData.receivedFrom = receivedFrom ? String(receivedFrom).trim() : null;
-    if (purpose !== undefined) updatedData.purpose = purpose ? String(purpose).trim() : null;
-    if (paidTo !== undefined) updatedData.paidTo = paidTo ? String(paidTo).trim() : null;
-    if (paidAmount !== undefined) updatedData.paidAmount = Math.max(0, Number(paidAmount) || 0);
-    if (bankDeposit !== undefined) updatedData.bankDeposit = Math.max(0, Number(bankDeposit) || 0);
-    if (remarks !== undefined) updatedData.remarks = remarks ? String(remarks).trim() : null;
-    if (customFields !== undefined) updatedData.customFields = customFields;
+    // Load active config and run backend validation
+    const config = await getOrganizationLedgerConfig(organizationId);
+    const validation = validateLedgerEntryData(rowData, config.fields);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
+    const customerName = extractRowFieldValue(rowData, rowData, 'customer_name');
+    const invoiceNumber = extractRowFieldValue(rowData, rowData, 'invoice_number');
+    const invoiceMonth = extractRowFieldValue(rowData, rowData, 'invoice_month');
+    const totalAmount = Number(extractRowFieldValue(rowData, rowData, 'total_invoice_amount')) || 0;
+
+    let entryDate = existing.date;
+    if (rowData.date) {
+      entryDate = new Date(rowData.date);
+    } else if (invoiceMonth && typeof invoiceMonth === 'string') {
+      const parts = invoiceMonth.split('_');
+      if (parts.length === 2) {
+        const monthNames = [
+          'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+          'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+        ];
+        const mIdx = monthNames.indexOf(parts[0].toUpperCase());
+        const year = parseInt(parts[1], 10);
+        if (mIdx !== -1 && !isNaN(year)) {
+          entryDate = new Date(year, mIdx, 1);
+        }
+      }
+    }
 
     const updated = await (prisma as any).cashLedgerEntry.update({
       where: { id },
-      data: updatedData,
+      data: {
+        date: entryDate,
+        cashReceived: totalAmount,
+        receivedFrom: customerName || null,
+        purpose: invoiceNumber || null,
+        paidTo: rowData.paidTo || null,
+        paidAmount: Number(rowData.paidAmount) || 0,
+        bankDeposit: Number(rowData.bankDeposit) || 0,
+        remarks: rowData.remarks || null,
+        data: rowData,
+        customFields: rowData,
+      },
     });
 
     await recordAuditLog({
-      action: 'CASH_LEDGER_ENTRY_UPDATED',
+      action: 'CASH_LEDGER_ROW_UPDATED',
       userId: access.user.id,
       userEmail: access.user.email,
       organizationId,
       relatedRecordId: id,
       metadata: {
-        changes: updatedData,
+        updatedFields: Object.keys(rowData),
       },
     });
 
     return NextResponse.json({
       success: true,
-      entry: updated,
+      entry: {
+        ...updated,
+        data: rowData,
+      },
+      message: 'Ledger row updated successfully.',
     });
   } catch (error: any) {
     console.error('Cash Ledger Entry PUT Error:', error);
@@ -93,6 +119,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Organization context missing.' }, { status: 400 });
     }
 
+    // Strict organization ownership check
     const existing = await (prisma as any).cashLedgerEntry.findUnique({
       where: { id },
     });
@@ -106,18 +133,18 @@ export async function DELETE(
     });
 
     await recordAuditLog({
-      action: 'CASH_LEDGER_ENTRY_DELETED',
+      action: 'CASH_LEDGER_ROW_DELETED',
       userId: access.user.id,
       userEmail: access.user.email,
       organizationId,
       relatedRecordId: id,
       metadata: {
         deletedEntry: {
+          id: existing.id,
           date: existing.date,
+          receivedFrom: existing.receivedFrom,
           cashReceived: existing.cashReceived,
-          paidAmount: existing.paidAmount,
-          bankDeposit: existing.bankDeposit,
-          purpose: existing.purpose,
+          data: existing.data,
         },
       },
     });

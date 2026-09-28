@@ -35,6 +35,8 @@ import {
   ShoppingBag,
   BarChart3,
   Shield,
+  WalletCards,
+  QrCode,
 } from 'lucide-react';
 
 export default function AdminLayout({
@@ -117,6 +119,7 @@ export default function AdminLayout({
       items: [
         { name: 'Platform Roles', path: '/admin/roles', icon: Shield },
         { name: 'Platform Modules', path: '/admin/module-pricing', icon: Tags },
+        { name: 'Counter Cash Ledger', path: '/admin/cash-ledger', icon: WalletCards },
       ],
     },
     {
@@ -134,6 +137,7 @@ export default function AdminLayout({
         { name: 'Quotations', path: '/admin/quotations', icon: FileText },
         { name: 'Sales Follow-up', path: '/admin/sales-follow-up', icon: UserCheck },
         { name: 'Pincodes & Regions', path: '/admin/pincodes', icon: MapPin },
+        { name: 'Shipping Label Templates', path: '/admin/shipping-label-templates', icon: QrCode },
         { name: 'Logistics Reports', path: '/admin/reports', icon: BarChart3 },
       ],
     },
