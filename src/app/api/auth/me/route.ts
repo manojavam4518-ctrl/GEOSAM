@@ -81,6 +81,9 @@ export async function GET(req: NextRequest) {
     if (!activeModuleKeys.includes('SHIPPING_LABEL_GENERATOR')) {
       activeModuleKeys.push('SHIPPING_LABEL_GENERATOR');
     }
+    if (!activeModuleKeys.includes('DECLARATIONS')) {
+      activeModuleKeys.push('DECLARATIONS');
+    }
 
     const isDemo = !activeSubscription && user.role !== 'ADMIN';
 

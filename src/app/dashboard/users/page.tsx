@@ -31,6 +31,8 @@ import {
   Phone,
 } from 'lucide-react';
 import Modal from '@/components/Modal';
+import { validateEmail } from '@/utils/emailValidation';
+import ValidatedEmailInput from '@/components/ValidatedEmailInput';
 
 export default function OrganizationUserAccountsPage() {
   const [userLicenses, setUserLicenses] = useState<any[]>([]);
@@ -241,6 +243,13 @@ export default function OrganizationUserAccountsPage() {
       return;
     }
 
+    const emailCheck = validateEmail(editEmailInput, { required: true, fieldName: 'Email Address' });
+    if (!emailCheck.isValid) {
+      setError(emailCheck.errorMessage || 'Please enter a valid email address.');
+      return;
+      return;
+    }
+
     if (!addPassword || addPassword.length < 6) {
       setError('Password must be at least 6 characters long.');
       return;
@@ -356,6 +365,13 @@ export default function OrganizationUserAccountsPage() {
 
     if (!editNameInput.trim() || !editEmailInput.trim()) {
       setError('Name and Email are required.');
+      return;
+    }
+
+    const emailCheck = validateEmail(editEmailInput, { required: true, fieldName: 'Email Address' });
+    if (!emailCheck.isValid) {
+      setError(emailCheck.errorMessage || 'Please enter a valid email address.');
+      return;
       return;
     }
 
@@ -492,7 +508,7 @@ export default function OrganizationUserAccountsPage() {
             <UserCheck className="w-5 h-5 text-[#0F4C3A]" />
             <h1 className="text-xl font-bold text-[#0F4C3A]">User Accounts & License Management</h1>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-helper-blue mt-1">
             Provision staff employee accounts using direct module selection. Assign exact features per user with automatic database-driven license calculations.
           </p>
         </div>
@@ -857,13 +873,13 @@ export default function OrganizationUserAccountsPage() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
                     Email Address (Login Username) *
                   </label>
-                  <input
-                    type="email"
+                  <ValidatedEmailInput
                     value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
+                    onChange={(val) => setAddEmail(val)}
                     placeholder="john@example.com"
                     required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-[#1E8262]"
+                    fieldName="Email Address"
+                    inputClassName="bg-slate-50 border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800"
                   />
                 </div>
               </div>
@@ -948,7 +964,7 @@ export default function OrganizationUserAccountsPage() {
                   <span className="block text-[10.5px] font-bold uppercase tracking-wider text-[#0F4C3A]">
                     3. Select Modules ({selectedModuleKeys.length} Selected)
                   </span>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-[11px] text-helper-blue">
                     Directly select the modules and features this employee can access.
                   </span>
                 </div>
@@ -1311,12 +1327,12 @@ export default function OrganizationUserAccountsPage() {
               <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
                 Email Address *
               </label>
-              <input
-                type="email"
+              <ValidatedEmailInput
                 value={editEmailInput}
-                onChange={(e) => setEditEmailInput(e.target.value)}
+                onChange={(val) => setEditEmailInput(val)}
                 required
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-800 focus:bg-white focus:outline-none focus:border-[#1E8262]"
+                fieldName="Email Address"
+                inputClassName="bg-slate-50 border-slate-200 rounded-lg p-2 text-xs text-slate-800"
               />
             </div>
 

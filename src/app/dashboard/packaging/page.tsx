@@ -540,7 +540,7 @@ export default function PackagingShopPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Dimensions (e.g., 18x12x10 Inch)</label>
+                <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">Dimensions (e.g., 18x12x10 Inch)</label>
                 <input
                   type="text"
                   value={inquiryForm.requiredDimension}
@@ -587,7 +587,7 @@ export default function PackagingShopPage() {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Requirements Description / Notes</label>
+              <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">Requirements Description / Notes</label>
               <textarea
                 rows={3}
                 required
@@ -599,7 +599,7 @@ export default function PackagingShopPage() {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Optional Attachment (Specification Sheet / Photo)</label>
+              <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">Optional Attachment (Specification Sheet / Photo)</label>
               <input
                 type="file"
                 accept="image/*"

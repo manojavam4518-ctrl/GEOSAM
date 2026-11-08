@@ -402,7 +402,7 @@ export default function PincodePage() {
               {/* 3. Courier Icon / Logo Upload */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Courier Icon / Logo <span className="text-slate-400 font-normal">(Optional)</span>
+                  Courier Icon / Logo <span className="text-helper-blue font-normal">(Optional)</span>
                 </label>
                 <div className="flex items-center gap-3">
                   {iconPreview ? (
@@ -446,7 +446,7 @@ export default function PincodePage() {
                       <Upload className="w-3.5 h-3.5 text-slate-500" />
                       <span>{iconPreview ? 'Change Icon' : 'Choose Icon Image'}</span>
                     </label>
-                    <p className="text-[10px] text-slate-400 mt-1">
+                    <p className="text-[10px] text-helper-blue mt-1">
                       PNG, JPG, JPEG, or WEBP (Max 2MB)
                     </p>
                   </div>

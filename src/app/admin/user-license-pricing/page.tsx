@@ -260,7 +260,7 @@ export default function AdminUserLicensePricingPage() {
                 step="1"
               />
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">
+            <p className="text-[10px] text-helper-blue mt-1">
               Note: Changing this price updates future purchase options. Existing purchased licenses retain their historical price.
             </p>
           </div>
@@ -268,7 +268,7 @@ export default function AdminUserLicensePricingPage() {
           <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
             <div>
               <span className="block font-bold text-slate-800">Active Status</span>
-              <span className="block text-[10px] text-slate-400">Enable or disable this duration option in customer UI</span>
+              <span className="block text-[10px] text-helper-blue">Enable or disable this duration option in customer UI</span>
             </div>
             <input
               type="checkbox"

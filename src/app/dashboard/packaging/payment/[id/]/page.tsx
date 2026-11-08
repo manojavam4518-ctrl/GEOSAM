@@ -293,7 +293,7 @@ export default function OrderPaymentPage() {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+              <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">
                 Upload Proof Screenshot (Optional)
               </label>
               <div className="relative border border-dashed border-slate-200 hover:border-[#0F4C3A] rounded-xl p-4 text-center cursor-pointer transition bg-slate-50/50 hover:bg-slate-50">

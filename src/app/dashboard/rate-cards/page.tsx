@@ -1443,7 +1443,7 @@ export default function RateCardsPage() {
 
                         {ranges.length === 0 ? (
                           <div className="border border-slate-200 rounded-lg p-3 bg-white text-center space-y-2">
-                            <p className="text-[10px] text-slate-400 italic">No weight ranges defined for this region.</p>
+                            <p className="text-[10px] text-helper-blue italic">No weight ranges defined for this region.</p>
                             <button
                               type="button"
                               onClick={() => addWeightRange(row.id)}

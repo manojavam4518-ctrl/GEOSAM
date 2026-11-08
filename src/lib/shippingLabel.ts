@@ -59,6 +59,60 @@ export interface ShippingLabelBarcodeConfig {
   height: number; // in mm or px
 }
 
+export type PrintSizePreset = '4x6' | '4x4' | '4x2.5' | '4x2' | 'A6' | 'a4' | 'A4' | 'CUSTOM';
+
+export interface PrintSizeOption {
+  id: '4x6' | '4x4' | '4x2.5' | '4x2' | 'a4';
+  label: string;
+  widthInches: number;
+  heightInches: number;
+  widthMm: number;
+  heightMm: number;
+}
+
+export const PRINT_SIZE_OPTIONS: PrintSizeOption[] = [
+  {
+    id: '4x6',
+    label: '4 x 6',
+    widthInches: 4.0,
+    heightInches: 6.0,
+    widthMm: 101.6,
+    heightMm: 152.4,
+  },
+  {
+    id: '4x4',
+    label: '4 x 4',
+    widthInches: 4.0,
+    heightInches: 4.0,
+    widthMm: 101.6,
+    heightMm: 101.6,
+  },
+  {
+    id: '4x2.5',
+    label: '4 x 2.5',
+    widthInches: 4.0,
+    heightInches: 2.5,
+    widthMm: 101.6,
+    heightMm: 63.5,
+  },
+  {
+    id: '4x2',
+    label: '4 x 2',
+    widthInches: 4.0,
+    heightInches: 2.0,
+    widthMm: 101.6,
+    heightMm: 50.8,
+  },
+  {
+    id: 'a4',
+    label: 'A4',
+    widthInches: 8.27,
+    heightInches: 11.69,
+    widthMm: 210,
+    heightMm: 297,
+  },
+];
+
 export interface ShippingLabelTemplateData {
   id?: string;
   name: string;
@@ -66,7 +120,7 @@ export interface ShippingLabelTemplateData {
   isDefault: boolean;
   isActive: boolean;
   version: number;
-  sizePreset: '4x6' | 'A6' | 'CUSTOM';
+  sizePreset: PrintSizePreset | string;
   widthInches: number;
   heightInches: number;
   widthMm: number;
@@ -86,6 +140,25 @@ export interface ShippingLabelTemplateData {
 
 export const DEFAULT_GEO_TRANSIT_LOGO =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 75" width="280" height="75"><rect width="280" height="75" rx="10" fill="%230F4C3A"/><rect x="12" y="14" width="46" height="46" rx="9" fill="%231E8262"/><path d="M25 45V30h20v6h-13v4h11v5h-11v6z" fill="%23FFFFFF"/><text x="70" y="38" font-family="Arial,sans-serif" font-weight="900" font-size="24" fill="%23FFFFFF" letter-spacing="1">GEO TRANSIT</text><text x="72" y="55" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="%23A7F3D0" letter-spacing="2">EXPRESS LOGISTICS</text></svg>';
+
+export interface CourierCompanyOption {
+  id: string;
+  name: string;
+  logoUrl?: string;
+  isDefault?: boolean;
+}
+
+export const SYSTEM_COURIER_COMPANIES: CourierCompanyOption[] = [
+  { id: 'geo-transit', name: 'GEO TRANSIT', logoUrl: DEFAULT_GEO_TRANSIT_LOGO, isDefault: true },
+  { id: 'blue-dart', name: 'Blue Dart', logoUrl: '/assets/couriers/bluedart.svg' },
+  { id: 'delhivery', name: 'Delhivery', logoUrl: '/assets/couriers/delhivery.png' },
+  { id: 'dtdc', name: 'DTDC', logoUrl: '/assets/couriers/dtdc.png' },
+  { id: 'india-post', name: 'India Post', logoUrl: '/assets/couriers/indiapost.jpg' },
+  { id: 'shadowfax', name: 'Shadowfax', logoUrl: '/assets/couriers/shadowfax.png' },
+  { id: 'xpressbees', name: 'XpressBees', logoUrl: '/assets/couriers/xpressbees.png' },
+  { id: 'professional-couriers', name: 'Professional Couriers', logoUrl: '/assets/couriers/professional_couriers.png' },
+  { id: 'allcargo-gati', name: 'Allcargo/GATI', logoUrl: '/assets/couriers/allcargo_gati.png' },
+];
 
 export const DEFAULT_SHIPPING_LABEL_FIELDS: ShippingLabelFieldConfig[] = [
   // 1. RECIPIENT SECTION (SHIP TO:)
@@ -244,7 +317,7 @@ export const DEFAULT_SHIPPING_LABEL_FIELDS: ShippingLabelFieldConfig[] = [
     visible: true,
     section: 'PAYMENT',
     order: 12,
-    options: ['PREPAID', 'COD', 'PARTIAL', 'TO PAY'],
+    options: ['PREPAID', 'COD', 'FOD', 'TO PAY'],
     defaultValue: 'PREPAID',
   },
   {
@@ -278,13 +351,13 @@ export const DEFAULT_SHIPPING_LABEL_FIELDS: ShippingLabelFieldConfig[] = [
     id: 'f_pkg_count',
     name: 'Package Count',
     key: 'package_count',
-    type: 'SHORT_TEXT',
+    type: 'NUMBER',
     required: false,
     visible: true,
     section: 'BARCODE_TRACKING',
     order: 15,
-    defaultValue: '001 / 001',
-    placeholder: '001 / 001',
+    defaultValue: 1,
+    placeholder: '1',
   },
 
   // 5. ROUTING & WEIGHT
@@ -464,11 +537,78 @@ export function validateShippingLabelData(
   }
 
   if (!formData.tracking_number || String(formData.tracking_number).trim() === '') {
-    errors.push('Tracking / Consignment number is required to generate scannable barcodes and QR codes.');
+    errors.push('Tracking / Consignment number is required.');
+  }
+
+  // Weight validation
+  if (formData.weight !== undefined && formData.weight !== null && formData.weight !== '') {
+    const w = Number(formData.weight);
+    if (isNaN(w) || w <= 0) {
+      errors.push('Weight must be a positive number.');
+    }
+  } else {
+    errors.push('Weight is required.');
+  }
+
+  // Mobile validation
+  if (formData.mobile) {
+    const digits = String(formData.mobile).replace(/\D/g, '');
+    const cleanDigits = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
+    if (cleanDigits.length !== 10 && digits.length < 7) {
+      errors.push('Mobile Number must contain exactly 10 digits.');
+    }
+  }
+
+  // Pincode validation
+  if (formData.pincode) {
+    const pin = String(formData.pincode).trim().replace(/\D/g, '');
+    if (pin.length !== 6) {
+      errors.push('Pincode must contain exactly 6 digits.');
+    }
+  }
+
+  // COD amount validation
+  if (formData.payment_status === 'COD') {
+    const amt = Number(formData.amount_to_collect);
+    if (isNaN(amt) || amt <= 0) {
+      errors.push('Amount to Collect is required for Cash on Delivery (COD) shipments.');
+    }
   }
 
   return {
     valid: errors.length === 0,
     errors,
   };
+}
+
+
+/**
+ * Safely parses any package count input into a positive integer >= 1.
+ */
+export function parsePackageCount(val: any): number {
+  if (typeof val === 'number' && !isNaN(val) && val > 0) {
+    return Math.floor(val);
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed.includes('/')) {
+      const parts = trimmed.split('/');
+      const total = parseInt(parts[parts.length - 1].trim(), 10);
+      if (!isNaN(total) && total > 0) return total;
+    }
+    const match = trimmed.match(/\d+/);
+    if (match) {
+      const parsed = parseInt(match[0], 10);
+      if (parsed > 0) return parsed;
+    }
+  }
+  return 1;
+}
+
+/**
+ * Formats package numbering in standard sequence format, e.g. "01 / 03" or "01 / 01".
+ */
+export function formatPackageSequence(current: number, total: number): string {
+  const padLength = Math.max(2, String(total).length);
+  return `${String(current).padStart(padLength, '0')} / ${String(total).padStart(padLength, '0')}`;
 }

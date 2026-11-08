@@ -7,7 +7,8 @@ export async function GET(
   { params }: { params: Promise<{ pincode: string }> }
 ) {
   try {
-    const access = await verifyModuleAccess(req, 'PINCODE_LOOKUP');
+    // Allow any authenticated user session (including Shipping Label Generator, Rate Calculator, etc.)
+    const access = await verifyModuleAccess(req);
     if (!access.authorized) {
       return access.response!;
     }

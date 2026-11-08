@@ -269,7 +269,7 @@ export default function AdminPaymentSettingsPage() {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <span className="block text-xs font-bold text-slate-800">Enable GST Charges</span>
-              <span className="block text-[9px] text-slate-400 mt-1">If enabled, adds GST calculation to orders</span>
+              <span className="block text-[9px] text-helper-blue mt-1">If enabled, adds GST calculation to orders</span>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input

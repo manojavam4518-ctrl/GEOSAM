@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { formatDateIndian } from '@/utils/dateUtils';
 import { useRouter, usePathname } from 'next/navigation';
@@ -34,6 +34,9 @@ import {
   WalletCards,
   Receipt,
   QrCode,
+  FileCheck,
+  Globe,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export default function DashboardLayout({
@@ -49,6 +52,44 @@ export default function DashboardLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+  // Submenu expansion & hover states
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
+  const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-expand International Tools if currently on one of its subpaths
+  useEffect(() => {
+    if (pathname?.startsWith('/dashboard/international-tools')) {
+      setExpandedMenus((prev) => ({ ...prev, 'International Tools': true }));
+    }
+  }, [pathname]);
+
+  const toggleMenuExpand = (menuName: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setExpandedMenus((prev) => ({
+      ...prev,
+      [menuName]: !prev[menuName],
+    }));
+  };
+
+  const handleMouseEnterMenu = (menuName: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredMenu(menuName);
+  };
+
+  const handleMouseLeaveMenu = () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredMenu(null);
+    }, 200);
+  };
 
   // Forced Password Change State
   const [curPassword, setCurPassword] = useState('');
@@ -205,9 +246,23 @@ export default function DashboardLayout({
         { name: 'Rate Calculator', path: '/dashboard/rate-calculator', icon: Calculator, moduleKey: 'RATE_CALCULATOR' },
         { name: 'Rate Cards', path: '/dashboard/rate-cards', icon: Tags, moduleKey: 'RATE_CARDS' },
         { name: 'Shipping Label Generator', path: '/dashboard/shipping-labels', icon: QrCode, moduleKey: 'SHIPPING_LABEL_GENERATOR' },
+        { name: 'Declaration Templates', path: '/dashboard/declarations', icon: FileCheck, moduleKey: 'DECLARATIONS' },
         { name: 'Pincode Search', path: '/dashboard/pincode-serviceability', icon: MapPin, moduleKey: 'PINCODE_LOOKUP' },
         { name: 'Tracker', path: '/dashboard/tracking', icon: Navigation, moduleKey: 'CARRIER_TRACKING' },
         { name: 'Sales Follow-Up', path: '/dashboard/sales-follow-up', icon: UserCheck, moduleKey: 'SALES_FOLLOW_UP' },
+        {
+          name: 'International Tools',
+          path: '/dashboard/international-tools',
+          icon: Globe,
+          subItems: [
+            {
+              name: 'Proforma Invoice',
+              path: '/dashboard/international-tools/proforma-invoice',
+              icon: FileSpreadsheet,
+            },
+          ],
+        },
+
       ],
     },
     {
@@ -240,7 +295,20 @@ export default function DashboardLayout({
   // 3. For Primary Company Users (!isAdditionalUser), show active entitled modules.
   const menuGroups = rawMenuGroups
     .map((group) => {
-      const filteredItems = group.items.filter((item: any) => {
+      const filteredItems = group.items
+        .map((item: any) => {
+          if (item.subItems) {
+            const filteredSub = item.subItems.filter((sub: any) => {
+              if (!sub.moduleKey) return true;
+              if (activeModuleKeys.length > 0 && !activeModuleKeys.includes(sub.moduleKey)) return false;
+              if (isAdditionalUser) return assignedModules.includes(sub.moduleKey);
+              return true;
+            });
+            return { ...item, subItems: filteredSub };
+          }
+          return item;
+        })
+        .filter((item: any) => {
         if (!item.moduleKey) return true; // General item (Overview, Profile, Devices, User Accounts)
 
         // Super Admin module catalogue activation check
@@ -443,21 +511,157 @@ export default function DashboardLayout({
               <div key={group.title} className="space-y-1">
                 {(!sidebarCollapsed || isHovered) && (
                   <div className="mx-3 mt-4 mb-2 px-2 py-1 border-b border-slate-200/80 flex items-center justify-between">
-                    <span className="block text-[10.5px] font-black text-slate-600 uppercase tracking-widest">
+                    <span className="block text-[11.8px] font-black text-slate-700 uppercase tracking-widest">
                       {group.title}
                     </span>
                   </div>
                 )}
-                {group.items.map((item) => {
+                {group.items.map((item: any) => {
                   const active = pathname === item.path;
+                  const isSubActive = item.subItems?.some(
+                    (sub: any) => pathname === sub.path || pathname?.startsWith(sub.path)
+                  );
+                  const hasSubItems = item.subItems && item.subItems.length > 0;
+                  const isSubmenuOpen = !!expandedMenus[item.name] || hoveredMenu === item.name;
                   const Icon = item.icon;
                   const showText = !sidebarCollapsed || isHovered;
+
+                  if (hasSubItems) {
+                    return (
+                      <div
+                        key={item.name}
+                        className="relative"
+                        onMouseEnter={() => handleMouseEnterMenu(item.name)}
+                        onMouseLeave={handleMouseLeaveMenu}
+                      >
+                        <div
+                          className={`group flex items-center text-[13.2px] font-bold transition-all duration-180 ${
+                            !showText
+                              ? 'justify-center p-2.5 rounded-lg'
+                              : 'gap-2 px-3.5 py-2.5 border-l-4 pl-3.5 rounded-r-xl rounded-l-none'
+                          } ${
+                            active || isSubActive
+                              ? showText
+                                ? 'bg-emerald-50 text-[#0F4C3A] border-[#0F4C3A] font-black shadow-2xs'
+                                : 'bg-emerald-100/80 text-[#0F4C3A]'
+                              : showText
+                                ? 'text-slate-800 font-bold hover:text-[#0F4C3A] hover:bg-emerald-50/60 hover:border-[#107c5a]/40 border-transparent hover:translate-x-0.5'
+                                : 'text-slate-600 hover:text-[#0F4C3A] hover:bg-emerald-50/60'
+                          }`}
+                        >
+                          <Link
+                            href={item.path}
+                            title={!showText ? item.name : undefined}
+                            className="flex items-center gap-3 flex-1 min-w-0"
+                          >
+                            <Icon
+                              className={`w-4 h-4 shrink-0 transition-transform duration-180 group-hover:scale-110 ${
+                                active || isSubActive
+                                  ? 'text-[#0F4C3A] font-bold'
+                                  : 'text-slate-500 group-hover:text-[#107c5a]'
+                              }`}
+                            />
+                            {showText && <span className="truncate">{item.name}</span>}
+                          </Link>
+
+                          {showText && (
+                            <button
+                              type="button"
+                              onClick={(e) => toggleMenuExpand(item.name, e)}
+                              className="p-1 rounded-md hover:bg-emerald-100/60 text-slate-400 hover:text-[#0F4C3A] transition cursor-pointer"
+                              title={isSubmenuOpen ? 'Collapse submenu' : 'Expand submenu'}
+                            >
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isSubmenuOpen ? 'rotate-180 text-[#0F4C3A]' : ''
+                                }`}
+                              />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Collapsed Sidebar Flyout on Hover */}
+                        {!showText && hoveredMenu === item.name && (
+                          <div className="absolute left-full top-0 ml-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                            <div className="px-3 py-1.5 border-b border-slate-100 flex items-center gap-2 text-xs font-black text-[#0F4C3A]">
+                              <Icon className="w-4 h-4 text-[#0F4C3A]" />
+                              <span className="truncate">{item.name}</span>
+                            </div>
+                            <div className="py-1">
+                              <Link
+                                href={item.path}
+                                className={`flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition ${
+                                  active
+                                    ? 'bg-emerald-50 text-[#0F4C3A]'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#0F4C3A]'
+                                }`}
+                              >
+                                <span>Overview</span>
+                              </Link>
+                              {item.subItems.map((sub: any) => {
+                                const subActive = pathname === sub.path;
+                                const SubIcon = sub.icon || FileSpreadsheet;
+                                return (
+                                  <Link
+                                    key={sub.name}
+                                    href={sub.path}
+                                    className={`flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition ${
+                                      subActive
+                                        ? 'bg-emerald-50 text-[#0F4C3A] font-black'
+                                        : 'text-slate-600 hover:bg-slate-50 hover:text-[#0F4C3A]'
+                                    }`}
+                                  >
+                                    <SubIcon className="w-3.5 h-3.5 text-[#0F4C3A]" />
+                                    <span>{sub.name}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expanded Sidebar Nested Submenu */}
+                        {showText && isSubmenuOpen && (
+                          <div className="pl-6 pr-2 py-1 space-y-1 transition-all duration-200">
+                            {item.subItems.map((sub: any) => {
+                              const subActive = pathname === sub.path;
+                              const SubIcon = sub.icon || FileSpreadsheet;
+                              return (
+                                <Link
+                                  key={sub.name}
+                                  href={sub.path}
+                                  className={`group flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12.5px] font-bold transition-all ${
+                                    subActive
+                                      ? 'bg-emerald-100/90 text-[#0F4C3A] font-extrabold shadow-2xs'
+                                      : 'text-slate-600 hover:text-[#0F4C3A] hover:bg-emerald-50/60'
+                                  }`}
+                                >
+                                  <SubIcon
+                                    className={`w-3.5 h-3.5 shrink-0 transition-transform group-hover:scale-110 ${
+                                      subActive
+                                        ? 'text-[#0F4C3A]'
+                                        : 'text-slate-400 group-hover:text-[#107c5a]'
+                                    }`}
+                                  />
+                                  <span className="truncate">{sub.name}</span>
+                                  {subActive && (
+                                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#0F4C3A]" />
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return (
                     <Link
                       key={item.name}
                       href={item.path}
                       title={!showText ? item.name : undefined}
-                      className={`group flex items-center text-xs font-bold transition-all duration-180 ${
+                      className={`group flex items-center text-[13.2px] font-bold transition-all duration-180 ${
                         !showText 
                           ? 'justify-center p-2.5 rounded-lg' 
                           : 'gap-3 px-3.5 py-2.5 border-l-4 pl-3.5 rounded-r-xl rounded-l-none'
@@ -467,7 +671,7 @@ export default function DashboardLayout({
                             ? 'bg-emerald-50 text-[#0F4C3A] border-[#0F4C3A] font-black shadow-2xs'
                             : 'bg-emerald-100/80 text-[#0F4C3A]'
                           : showText
-                            ? 'text-slate-700 hover:text-[#0F4C3A] hover:bg-emerald-50/60 hover:border-[#107c5a]/40 border-transparent hover:translate-x-0.5'
+                            ? 'text-slate-800 font-bold hover:text-[#0F4C3A] hover:bg-emerald-50/60 hover:border-[#107c5a]/40 border-transparent hover:translate-x-0.5'
                             : 'text-slate-600 hover:text-[#0F4C3A] hover:bg-emerald-50/60'
                       }`}
                     >
@@ -569,7 +773,7 @@ export default function DashboardLayout({
           <div className="p-3 border-t border-slate-200/80 bg-white mt-auto">
             <button
               onClick={handleLogout}
-              className={`w-full flex items-center text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 p-2.5 rounded-xl transition-all duration-180 cursor-pointer ${
+              className={`w-full flex items-center text-[13.2px] font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 p-2.5 rounded-xl transition-all duration-180 cursor-pointer ${
                 (!sidebarCollapsed || isHovered) ? 'gap-3 px-3.5' : 'justify-center'
               }`}
               title={sidebarCollapsed && !isHovered ? "Log Out" : undefined}
@@ -600,19 +804,84 @@ export default function DashboardLayout({
                 {menuGroups.map((group) => (
                   <div key={group.title} className="space-y-1">
                     <div className="mx-1 my-1 px-3 py-1.5 rounded-lg bg-slate-100/90 border border-slate-200/60 shadow-2xs">
-                      <span className="block text-[10.5px] font-bold text-[#0F4C3A] uppercase tracking-wider">
+                      <span className="block text-[11.8px] font-black text-[#0F4C3A] uppercase tracking-wider">
                         {group.title}
                       </span>
                     </div>
-                    {group.items.map((item) => {
+                    {group.items.map((item: any) => {
                       const active = pathname === item.path;
+                      const isSubActive = item.subItems?.some(
+                        (sub: any) => pathname === sub.path || pathname?.startsWith(sub.path)
+                      );
+                      const hasSubItems = item.subItems && item.subItems.length > 0;
+                      const isSubmenuOpen = !!expandedMenus[item.name];
                       const Icon = item.icon;
+
+                      if (hasSubItems) {
+                        return (
+                          <div key={item.name} className="space-y-1">
+                            <div
+                              className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-[13.2px] font-bold transition ${
+                                active || isSubActive
+                                  ? 'bg-[#E8F5E9] text-[#0F4C3A]'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                              }`}
+                            >
+                              <Link
+                                href={item.path}
+                                onClick={() => setSidebarOpen(false)}
+                                className="flex items-center gap-3 flex-1"
+                              >
+                                <Icon className={`w-4 h-4 ${active || isSubActive ? 'text-[#0F4C3A]' : 'text-slate-400'}`} />
+                                <span>{item.name}</span>
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={(e) => toggleMenuExpand(item.name, e)}
+                                className="p-1 rounded-md hover:bg-emerald-100 text-slate-500 hover:text-[#0F4C3A] cursor-pointer"
+                                title={isSubmenuOpen ? 'Collapse submenu' : 'Expand submenu'}
+                              >
+                                <ChevronDown
+                                  className={`w-4 h-4 transition-transform duration-200 ${
+                                    isSubmenuOpen ? 'rotate-180 text-[#0F4C3A]' : ''
+                                  }`}
+                                />
+                              </button>
+                            </div>
+
+                            {isSubmenuOpen && (
+                              <div className="pl-6 space-y-1">
+                                {item.subItems.map((sub: any) => {
+                                  const subActive = pathname === sub.path;
+                                  const SubIcon = sub.icon || FileSpreadsheet;
+                                  return (
+                                    <Link
+                                      key={sub.name}
+                                      href={sub.path}
+                                      onClick={() => setSidebarOpen(false)}
+                                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12.5px] font-bold transition ${
+                                        subActive
+                                          ? 'bg-emerald-100 text-[#0F4C3A] font-black'
+                                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                                      }`}
+                                    >
+                                      <SubIcon className={`w-3.5 h-3.5 ${subActive ? 'text-[#0F4C3A]' : 'text-slate-400'}`} />
+                                      <span>{sub.name}</span>
+                                    </Link>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+
                       return (
                         <Link
                           key={item.name}
                           href={item.path}
                           onClick={() => setSidebarOpen(false)}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold transition ${
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.2px] font-bold transition ${
                             active
                               ? 'bg-[#E8F5E9] text-[#0F4C3A]'
                               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -630,7 +899,7 @@ export default function DashboardLayout({
               <div className="border-t border-slate-200 pt-4 mt-auto">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 transition"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.2px] font-bold text-red-600 hover:bg-red-50 transition"
                 >
                   <LogOut className="w-4 h-4 text-red-500" />
                   <span>Logout Session</span>

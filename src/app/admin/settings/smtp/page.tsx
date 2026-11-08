@@ -210,7 +210,7 @@ export default function AdminSmtpSettingsPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-[#1c2e24] focus:outline-none font-mono"
                   required
                 />
-                <p className="text-[9px] text-slate-400 mt-1 font-normal">
+                <p className="text-[9px] text-helper-blue mt-1 font-normal">
                   For Gmail (smtp.gmail.com), use a 16-character Google App Password.
                 </p>
               </div>

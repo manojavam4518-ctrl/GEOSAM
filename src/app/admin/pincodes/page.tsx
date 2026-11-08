@@ -821,7 +821,7 @@ export default function AdminPincodesPage() {
       >
         <form onSubmit={handlePincodeSubmit} className="space-y-4 text-xs font-semibold text-slate-600">
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Pincode (6-Digits)</label>
+            <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">Pincode (6-Digits)</label>
             <input
               type="text"
               value={pincode}
@@ -859,7 +859,7 @@ export default function AdminPincodesPage() {
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">District (Optional)</label>
+            <label className="block text-[10px] font-bold text-helper-blue uppercase mb-1">District (Optional)</label>
             <input
               type="text"
               value={district}

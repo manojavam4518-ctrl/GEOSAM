@@ -539,7 +539,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 9. Enforce history capacity (20 records)
+    // 9. Auto-cleanup calculation history (> 20 days) and enforce capacity (20 records)
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    await prisma.calculation.deleteMany({
+      where: {
+        userId: user.id,
+        createdAt: { lt: twentyDaysAgo },
+      },
+    });
+
     const excessRecords = await prisma.calculation.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },

@@ -972,7 +972,7 @@ export default function AdminShippingLabelTemplatesPage() {
                       <option value="PREPAID">PREPAID</option>
                       <option value="COD">COD (Cash on Delivery)</option>
                       <option value="TO PAY">TO PAY</option>
-                      <option value="PARTIAL">PARTIAL</option>
+                      <option value="FOD">FOD</option>
                     </select>
                   </div>
                 </div>

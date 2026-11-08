@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { takeScreenshot } from '@/utils/exportUtils';
 import { formatDateIndian, formatDateTimeIndian } from '@/utils/dateUtils';
 import ExportQuoteModal from '@/components/ExportQuoteModal';
@@ -12,6 +12,11 @@ import {
   RotateCcw,
   Search,
   ChevronDown,
+  Trash2,
+  Calendar,
+  AlertTriangle,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface CalculationHistorySectionProps {
@@ -43,6 +48,45 @@ export default function CalculationHistorySection({
   // One-click breakdown state (Closed by default as shown in reference)
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
+  // Dropdown menu state (for Delete All and Delete by Period)
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Delete All Modal state
+  const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+
+  // Delete by Period Modal state
+  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+  const [periodStartDate, setPeriodStartDate] = useState('');
+  const [periodEndDate, setPeriodEndDate] = useState('');
+  const [periodStep, setPeriodStep] = useState<'SELECT' | 'CONFIRM'>('SELECT');
+  const [periodMatchingCount, setPeriodMatchingCount] = useState<number | null>(null);
+  const [isDeletingPeriod, setIsDeletingPeriod] = useState(false);
+  const [periodError, setPeriodError] = useState('');
+
+  // Notification Banner state
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  // Auto-dismiss notification after 5 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
+  // Close dropdown menu on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const fetchHistory = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     else setRefreshing(true);
@@ -64,7 +108,11 @@ export default function CalculationHistorySection({
 
       if (histRes.ok) {
         const histData = await histRes.json();
-        const records = histData.history || [];
+        const rawRecords = histData.history || [];
+        
+        // Auto-delete safeguard: strictly filter out any records older than 20 days based on their individual creation timestamp
+        const twentyDaysAgoMs = Date.now() - 20 * 24 * 60 * 60 * 1000;
+        const records = rawRecords.filter((r: any) => new Date(r.createdAt).getTime() >= twentyDaysAgoMs);
         setHistory(records);
 
         // Preserve current selection if still valid, or default to first
@@ -137,6 +185,131 @@ export default function CalculationHistorySection({
     });
   }, [history, searchQuery, unitFilter]);
 
+  // Action: Handle Delete All History
+  const handleDeleteAll = async () => {
+    if (isDeletingAll) return;
+    setIsDeletingAll(true);
+    try {
+      const res = await fetch('/api/calculator/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'ALL' }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete calculation history.');
+      }
+
+      setHistory([]);
+      setSelectedCalc(null);
+      setIsDeleteAllModalOpen(false);
+      setNotification({
+        type: 'success',
+        message: data.message || 'All calculation history records have been successfully deleted.',
+      });
+    } catch (err: any) {
+      console.error('Delete All Error:', err);
+      setNotification({
+        type: 'error',
+        message: err.message || 'An error occurred while deleting calculation history.',
+      });
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  // Action: Open Period Modal
+  const openPeriodModal = () => {
+    setPeriodStartDate('');
+    setPeriodEndDate('');
+    setPeriodStep('SELECT');
+    setPeriodMatchingCount(null);
+    setPeriodError('');
+    setIsPeriodModalOpen(true);
+  };
+
+  // Action: Proceed from Date Selection to Confirmation
+  const handleProceedPeriodConfirmation = () => {
+    setPeriodError('');
+    if (!periodStartDate || !periodEndDate) {
+      setPeriodError('Please select both Start Date and End Date.');
+      return;
+    }
+
+    const start = new Date(`${periodStartDate}T00:00:00`);
+    const end = new Date(`${periodEndDate}T23:59:59.999`);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      setPeriodError('Invalid dates selected.');
+      return;
+    }
+
+    if (start.getTime() > end.getTime()) {
+      setPeriodError('Start Date cannot be after End Date.');
+      return;
+    }
+
+    // Check if matching records exist within the selected period
+    const matching = history.filter((item) => {
+      const itemDate = new Date(item.createdAt);
+      return itemDate >= start && itemDate <= end;
+    });
+
+    if (matching.length === 0) {
+      setPeriodError('No calculation history records found in the selected period.');
+      return;
+    }
+
+    setPeriodMatchingCount(matching.length);
+    setPeriodStep('CONFIRM');
+  };
+
+  // Action: Confirm and Execute Delete by Period
+  const handleConfirmDeletePeriod = async () => {
+    if (isDeletingPeriod) return;
+    setIsDeletingPeriod(true);
+    setPeriodError('');
+
+    try {
+      const start = new Date(`${periodStartDate}T00:00:00`);
+      const end = new Date(`${periodEndDate}T23:59:59.999`);
+
+      const res = await fetch('/api/calculator/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'PERIOD',
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete records for the selected period.');
+      }
+
+      if (!data.success && data.matchingCount === 0) {
+        setPeriodError(data.message || 'No calculation history records exist in the selected period.');
+        setIsDeletingPeriod(false);
+        return;
+      }
+
+      setIsPeriodModalOpen(false);
+      await fetchHistory(true);
+      setNotification({
+        type: 'success',
+        message: data.message || `Deleted calculation history records from ${formatDateIndian(periodStartDate)} to ${formatDateIndian(periodEndDate)}.`,
+      });
+    } catch (err: any) {
+      console.error('Delete by Period Error:', err);
+      setPeriodError(err.message || 'An error occurred while deleting records.');
+    } finally {
+      setIsDeletingPeriod(false);
+    }
+  };
+
   return (
     <section
       id="calculation-history"
@@ -144,6 +317,37 @@ export default function CalculationHistorySection({
         isDark ? 'bg-[#14231E] border-[#1E374B]' : 'bg-white border-[#CFE1F6]'
       }`}
     >
+      {/* Notification Banner */}
+      {notification && (
+        <div
+          className={`px-4 py-2.5 text-xs font-semibold flex items-center justify-between gap-3 border-b animate-in fade-in duration-150 ${
+            notification.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+              : notification.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+              : 'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            ) : notification.type === 'error' ? (
+              <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+            ) : (
+              <History className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* One-Click Clickable Header Card */}
       <div
         role="button"
@@ -197,8 +401,71 @@ export default function CalculationHistorySection({
           </div>
         </div>
 
-        {/* Right: Subtle Clickable Breakdown Indicator */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right: Actions Dropdown Menu + Breakdown Indicator */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* History Management Dropdown */}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMenuOpen((prev) => !prev);
+              }}
+              title="Calculation History Options"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                isDark
+                  ? 'bg-[#182C3B] text-slate-300 border-[#25465F] hover:bg-[#1E374B] hover:text-white'
+                  : 'bg-white text-slate-700 border-[#BCD4F0] hover:bg-[#F4F9FF] hover:border-[#96BEEB]'
+              }`}
+              aria-haspopup="true"
+              aria-expanded={isMenuOpen}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              <span className="hidden sm:inline">Delete History</span>
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Popover */}
+            {isMenuOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`absolute right-0 mt-1.5 w-48 rounded-xl shadow-lg border p-1 z-30 animate-in fade-in zoom-in-95 duration-100 ${
+                  isDark
+                    ? 'bg-[#13222E] border-[#25465F] text-slate-200'
+                    : 'bg-white border-slate-200 text-slate-800'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    openPeriodModal();
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition text-left cursor-pointer ${
+                    isDark ? 'hover:bg-[#182C3B] text-slate-200' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                  <span>Delete by Period</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsDeleteAllModalOpen(true);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition text-left cursor-pointer text-rose-600 ${
+                    isDark ? 'hover:bg-rose-950/40' : 'hover:bg-rose-50'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Delete All</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* View / Hide Breakdown Button */}
           <span
             className={`text-xs font-bold hidden sm:inline-block transition-colors duration-150 ${
               isDark
@@ -227,7 +494,7 @@ export default function CalculationHistorySection({
       {/* One-Click Breakdown View Area */}
       {isExpanded && (
         <div id="calculation-history-breakdown" className="p-4 sm:p-6 transition-all duration-200 animate-in fade-in duration-150">
-          {/* Breakdown Controls Toolbar: Search, Unit Filter, Refresh */}
+          {/* Breakdown Controls Toolbar: Search, Unit Filter, Refresh, Delete Shortcuts */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -311,7 +578,7 @@ export default function CalculationHistorySection({
                   No calculations logged in history yet
                 </h3>
                 <p className={`text-xs mt-1 max-w-sm mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Use the Weight Calculator above to evaluate cargo dimensions and compute weights. Your calculation results will be saved here automatically.
+                  Use the Weight Calculator above to evaluate cargo dimensions and compute weights. Your calculation results will be saved here automatically (auto-deleted after 20 days).
                 </p>
               </div>
             </div>
@@ -406,14 +673,17 @@ export default function CalculationHistorySection({
                   </table>
                 </div>
 
-                {/* Table footer count */}
+                {/* Table footer count & 20-day policy indicator */}
                 <div
-                  className={`px-4 py-2 border-t text-[10px] flex justify-between items-center ${
+                  className={`px-4 py-2 border-t text-[10px] flex justify-between items-center flex-wrap gap-2 ${
                     isDark ? 'bg-[#142620] border-[#264E41] text-slate-400' : 'bg-slate-50/80 border-slate-200 text-slate-500'
                   }`}
                 >
                   <span>Showing {filteredHistory.length} of {history.length} calculations</span>
-                  <span>Click any row to view breakdown and export</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Auto-deleted after 20 days</span>
+                  </span>
                 </div>
               </div>
 
@@ -584,6 +854,246 @@ export default function CalculationHistorySection({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Delete All Confirmation Dialog */}
+      {isDeleteAllModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div
+            className={`rounded-2xl shadow-xl border w-full max-w-sm p-6 space-y-4 animate-in fade-in duration-150 ${
+              isDark ? 'bg-[#13222E] border-[#25465F]' : 'bg-white border-slate-200'
+            }`}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Delete Calculation History
+                </h3>
+                <p className={`text-xs mt-1.5 font-medium ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Are you sure you want to delete all calculation history?
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  This will permanently delete all your calculation history records. No other application data will be affected.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingAll}
+                onClick={() => setIsDeleteAllModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingAll}
+                onClick={handleDeleteAll}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingAll ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete by Period Modal */}
+      {isPeriodModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div
+            className={`rounded-2xl shadow-xl border w-full max-w-md p-6 space-y-4 animate-in fade-in duration-150 ${
+              isDark ? 'bg-[#13222E] border-[#25465F]' : 'bg-white border-slate-200'
+            }`}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    {periodStep === 'SELECT' ? 'Delete History by Period' : 'Confirm Period Deletion'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {periodStep === 'SELECT'
+                      ? 'Select date range of calculation records to delete'
+                      : 'Review and confirm the period before deleting'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPeriodModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {periodError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{periodError}</span>
+              </div>
+            )}
+
+            {periodStep === 'SELECT' ? (
+              /* Step 1: Date Range Selection */
+              <div className="space-y-4 py-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={`block text-xs font-bold mb-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={periodStartDate}
+                      onChange={(e) => {
+                        setPeriodStartDate(e.target.value);
+                        setPeriodError('');
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl text-xs font-medium border focus:outline-none transition ${
+                        isDark
+                          ? 'bg-[#10231D] border-[#2E5448] text-slate-200 focus:border-sky-400'
+                          : 'bg-white border-slate-200 text-slate-800 focus:border-sky-500'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-xs font-bold mb-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={periodEndDate}
+                      onChange={(e) => {
+                        setPeriodEndDate(e.target.value);
+                        setPeriodError('');
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl text-xs font-medium border focus:outline-none transition ${
+                        isDark
+                          ? 'bg-[#10231D] border-[#2E5448] text-slate-200 focus:border-sky-400'
+                          : 'bg-white border-slate-200 text-slate-800 focus:border-sky-500'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+                  <p>• Records created between the start and end dates (inclusive) will be deleted.</p>
+                  <p>• Only Calculation History records will be deleted. All other data remains intact.</p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPeriodModalOpen(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleProceedPeriodConfirmation}
+                    className="px-4 py-2 text-xs font-bold text-white bg-[#0F4C3A] hover:bg-[#1E8262] rounded-xl transition shadow-xs cursor-pointer"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Step 2: Confirmation Dialog with Selected Period Display */
+              <div className="space-y-4 py-1">
+                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 dark:bg-amber-950/40 dark:border-amber-900/60 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>Confirm Record Deletion</span>
+                  </div>
+                  <p className="text-xs text-amber-900 dark:text-amber-200 font-medium">
+                    Are you sure you want to delete calculation history for the selected period?
+                  </p>
+                  <div className="pt-2 border-t border-amber-200 dark:border-amber-900/60 grid grid-cols-2 gap-2 text-[11.5px]">
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400">
+                        Start Date
+                      </span>
+                      <span className="font-bold text-slate-800 dark:text-white">
+                        {formatDateIndian(periodStartDate)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-amber-700 dark:text-amber-400">
+                        End Date
+                      </span>
+                      <span className="font-bold text-slate-800 dark:text-white">
+                        {formatDateIndian(periodEndDate)}
+                      </span>
+                    </div>
+                  </div>
+                  {periodMatchingCount !== null && (
+                    <div className="pt-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                      Records to be deleted: <span className="underline font-black">{periodMatchingCount}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    disabled={isDeletingPeriod}
+                    onClick={() => {
+                      setPeriodStep('SELECT');
+                      setPeriodError('');
+                    }}
+                    className="px-3.5 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+                  >
+                    Change Dates
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isDeletingPeriod}
+                      onClick={() => setIsPeriodModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeletingPeriod}
+                      onClick={handleConfirmDeletePeriod}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeletingPeriod ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Deleting...</span>
+                        </>
+                      ) : (
+                        <span>Delete Records</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

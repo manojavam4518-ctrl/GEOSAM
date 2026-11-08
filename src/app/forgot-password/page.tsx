@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h2 className="text-lg font-bold text-[#0F4C3A]">Reset Email Dispatched</h2>
-            <p className="text-slate-500 text-xs mt-2 leading-relaxed">
+            <p className="text-helper-blue text-xs mt-2 leading-relaxed">
               If <strong>{email}</strong> is registered on our platform, you will receive an email instructions link to reset your password shortly.
             </p>
 

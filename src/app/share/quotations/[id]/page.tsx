@@ -358,7 +358,7 @@ export default function PublicQuotationView() {
         </div>
 
         {/* Quotation Footer */}
-        <div className="border-t border-slate-100 pt-6 text-center text-[10px] text-slate-400 font-light flex items-center justify-between flex-wrap gap-2">
+        <div className="border-t border-slate-100 pt-6 text-center text-[10px] text-helper-blue font-light flex items-center justify-between flex-wrap gap-2">
           <span>{tmpl.footerText || 'Thank you for choosing our shipping comparison services.'}</span>
           <span className="font-semibold text-[#0F4C3A] tracking-wider">Rates calculated using configured Rate Card</span>
         </div>

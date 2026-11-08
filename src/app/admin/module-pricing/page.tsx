@@ -574,7 +574,7 @@ export default function AdminModulePricingPage() {
             <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
               <div>
                 <span className="block font-bold text-slate-800">Module Availability</span>
-                <span className="block text-[10px] text-slate-400">
+                <span className="block text-[10px] text-helper-blue">
                   Allow this module to be immediately selectable by Organization Admins
                 </span>
               </div>
@@ -735,7 +735,7 @@ export default function AdminModulePricingPage() {
                 </div>
               </div>
 
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-helper-blue">
                 Updating prices applies immediately to new user account licenses and additions. Existing active licenses remain unaffected.
               </p>
             </div>
@@ -743,7 +743,7 @@ export default function AdminModulePricingPage() {
             <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
               <div>
                 <span className="block font-bold text-slate-800">Module Availability</span>
-                <span className="block text-[10px] text-slate-400">
+                <span className="block text-[10px] text-helper-blue">
                   Allow this module to be included in new customer employee licenses
                 </span>
               </div>

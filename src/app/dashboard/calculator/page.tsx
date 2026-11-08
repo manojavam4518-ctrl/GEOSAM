@@ -343,8 +343,8 @@ function CalculatorContent() {
   const handleResetUnitConverter = () => {
     setConvFrom('CM');
     setConvTo('CM');
-    setConvValue('10');
-    setConvResult(10);
+    setConvValue('');
+    setConvResult(null);
   };
 
   // Apply converted result to calculator dimensions
@@ -1002,7 +1002,7 @@ function CalculatorContent() {
       <div className={`flex items-center justify-between flex-wrap gap-4 border-b pb-4 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
         <div>
           <h1 className={`text-2xl font-bold ${isDark ? 'text-emerald-400' : 'text-[#0F4C3A]'}`}>Weight Calculator</h1>
-          <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Volumetric cargo evaluation workspace</p>
+          <p className="text-xs mt-1 text-helper-blue">Volumetric cargo evaluation workspace</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1079,25 +1079,6 @@ function CalculatorContent() {
 
             {converterExpanded && (
               <div className="p-4 sm:p-5 space-y-3.5 sm:space-y-4">
-                {/* Top-Right Action Row: Reset Button */}
-                <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    id="unit-converter-reset-btn"
-                    onClick={handleResetUnitConverter}
-                    title="Reset unit converter"
-                    aria-label="Reset unit converter"
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/30 ${
-                      isDark
-                        ? 'bg-[#182B25] border-[#264E41] text-red-400 hover:bg-red-950/40 hover:border-red-700/60 active:scale-[0.98]'
-                        : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200 active:scale-[0.98]'
-                    }`}
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset</span>
-                  </button>
-                </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6">
                   {/* Left Column: Convert From (Input Side) */}
                   <div className="space-y-3">
@@ -1225,64 +1206,85 @@ function CalculatorContent() {
                       </div>
                     </div>
 
-                    {/* Output Unit Selector Radio Buttons */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" role="radiogroup" aria-label="Convert To Unit Selection">
-                      {[
-                        { id: 'MM' as const, label: 'MM' },
-                        { id: 'CM' as const, label: 'CM' },
-                        { id: 'Inch' as const, label: 'IN' },
-                        { id: 'Feet' as const, label: 'FT' },
-                      ].map((u) => {
-                        const isSelected = convTo === u.id;
-                        return (
-                          <label
-                            key={u.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConvTo(u.id);
-                            }}
-                            className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all ${
-                              isSelected
-                                ? isDark
-                                  ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
-                                  : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
-                                : isDark
-                                  ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
-                                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="unitConverterToRadio"
-                              value={u.id}
-                              checked={isSelected}
-                              onChange={() => setConvTo(u.id)}
-                              className="sr-only"
-                            />
-                            <span
-                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                    {/* Output Unit Selector Radio Buttons & Reset Button beneath Conversion Result */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap shrink-0" role="radiogroup" aria-label="Convert To Unit Selection">
+                        {[
+                          { id: 'MM' as const, label: 'MM' },
+                          { id: 'CM' as const, label: 'CM' },
+                          { id: 'Inch' as const, label: 'IN' },
+                          { id: 'Feet' as const, label: 'FT' },
+                        ].map((u) => {
+                          const isSelected = convTo === u.id;
+                          return (
+                            <label
+                              key={u.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConvTo(u.id);
+                              }}
+                              className={`cursor-pointer select-none py-1 px-2.5 sm:py-1.5 sm:px-3 rounded-lg border text-xs flex items-center gap-1.5 sm:gap-2 transition-all shrink-0 ${
                                 isSelected
-                              ? isDark
-                                ? 'border-emerald-400 bg-[#103A2D]'
-                                : 'border-[#1E8262] bg-[#E8F5E9]'
-                              : isDark
-                                ? 'border-slate-500 bg-[#14231E]'
-                                : 'border-slate-300 bg-white'
+                                  ? isDark
+                                    ? 'bg-[#103A2D] border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-xs font-semibold'
+                                    : 'bg-[#E8F5E9] border-[#1E8262] text-[#0F4C3A] ring-1 ring-[#1E8262]/30 shadow-xs font-semibold'
+                                  : isDark
+                                    ? 'bg-[#14231E] border-[#2E5448] text-slate-300 hover:bg-[#1C322B] hover:border-slate-500'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
                               }`}
-                              aria-hidden="true"
                             >
-                              {isSelected && (
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
-                                  }`}
-                                />
-                              )}
-                            </span>
-                            <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
-                          </label>
-                        );
-                      })}
+                              <input
+                                type="radio"
+                                name="unitConverterToRadio"
+                                value={u.id}
+                                checked={isSelected}
+                                onChange={() => setConvTo(u.id)}
+                                className="sr-only"
+                              />
+                              <span
+                                className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                  isSelected
+                                ? isDark
+                                  ? 'border-emerald-400 bg-[#103A2D]'
+                                  : 'border-[#1E8262] bg-[#E8F5E9]'
+                                : isDark
+                                  ? 'border-slate-500 bg-[#14231E]'
+                                  : 'border-slate-300 bg-white'
+                                }`}
+                                aria-hidden="true"
+                              >
+                                {isSelected && (
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isDark ? 'bg-emerald-400' : 'bg-[#0F4C3A]'
+                                    }`}
+                                  />
+                                )}
+                              </span>
+                              <span className="font-bold tracking-tight text-[11px] sm:text-xs">{u.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {/* Reset Button (aligned toward the right side, directly beneath Conversion Result) */}
+                      <div className="flex items-center justify-end shrink-0 ml-auto">
+                        <button
+                          type="button"
+                          id="unit-converter-reset-btn"
+                          onClick={handleResetUnitConverter}
+                          title="Reset unit converter"
+                          aria-label="Reset unit converter"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/30 shrink-0 ${
+                            isDark
+                              ? 'bg-[#182B25] border-[#264E41] text-red-400 hover:bg-red-950/40 hover:border-red-700/60 active:scale-[0.98]'
+                              : 'bg-white border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200 active:scale-[0.98]'
+                          }`}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1348,73 +1350,76 @@ function CalculatorContent() {
           {/* Calculator Inputs Form */}
           <form onSubmit={handleCalculate} className="space-y-6">
 
-            {/* Service Type */}
-            <div className={`border p-5 rounded-2xl shadow-sm space-y-3 ${
-              isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
-            }`}>
-              <span className={`block text-xs font-extrabold uppercase tracking-wider ${
-                isDark ? 'text-slate-200' : 'text-slate-800'
-              }`}>
-                Service Type
-              </span>
-              <div className="grid grid-cols-2 gap-4 max-w-md">
-                <button
-                  type="button"
-                  onClick={() => handleServiceTypeChange('DOMESTIC')}
-                  className={`py-3 px-4 rounded-xl font-bold text-sm text-center transition border cursor-pointer ${
-                    serviceType === 'DOMESTIC'
-                      ? isDark
-                        ? 'bg-[#103A2D] border-emerald-400 text-emerald-300 shadow-xs font-bold'
-                        : 'bg-[#f0f7f4] border-[#107c5a] text-[#0e382c] shadow-xs'
-                      : isDark
-                        ? 'bg-[#182B25] border-[#264E41] text-slate-400 hover:bg-[#1F362E]'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100/50'
-                  }`}
-                >
-                  Domestic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleServiceTypeChange('INTERNATIONAL')}
-                  className={`py-3 px-4 rounded-xl font-bold text-sm text-center transition border cursor-pointer ${
-                    serviceType === 'INTERNATIONAL'
-                      ? isDark
-                        ? 'bg-[#103A2D] border-emerald-400 text-emerald-300 shadow-xs font-bold'
-                        : 'bg-[#f0f7f4] border-[#107c5a] text-[#0e382c] shadow-xs'
-                      : isDark
-                        ? 'bg-[#182B25] border-[#264E41] text-slate-400 hover:bg-[#1F362E]'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100/50'
-                  }`}
-                >
-                  International
-                </button>
-              </div>
-            </div>
-
             {/* Package Dimensions Card with integrated MULTIPLE PACKAGES toggle & Radio-based APPLY TO ALL */}
             <div className={`border p-5 rounded-2xl shadow-sm space-y-4 ${
               isDark ? 'bg-[#14231E] border-[#264E41]' : 'bg-white border-slate-200'
             }`}>
-              {/* Header Row: PACKAGE DIMENSIONS (Left) + DIVISOR (Right) on the same line */}
+              {/* Header Row: PACKAGE DIMENSIONS & Service Type (Left) + DIVISOR (Right) on the same line */}
               <div className={`flex flex-col xl:flex-row xl:items-start gap-3.5 xl:gap-4 border-b pb-4 w-full ${
                 isDark ? 'border-slate-800' : 'border-slate-100'
               }`}>
-                {/* LEFT SIDE: Package Dimensions Title & Subtitle with Icon (Compact to maximize space for Divisor) */}
-                <div className="flex items-center gap-2.5 pr-3 xl:pr-3.5 border-b xl:border-b-0 xl:border-r border-slate-200 dark:border-slate-800 shrink-0 pb-3 xl:pb-0">
-                  <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-xs shrink-0 ${
-                    isDark ? 'bg-[#103A2D] text-emerald-300 border border-emerald-500/40' : 'bg-[#0e2c22] text-white'
-                  }`}>
-                    <Package className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </div>
-                  <div className="shrink-0">
-                    <h2 className={`text-xs sm:text-sm font-black tracking-tight uppercase ${
-                      isDark ? 'text-white' : 'text-[#0e2c22]'
+                {/* LEFT SIDE: Package Dimensions Title & Subtitle + Vertical Service Type Selection */}
+                <div className="flex flex-col gap-3.5 pr-3 xl:pr-4 border-b xl:border-b-0 xl:border-r border-slate-200 dark:border-slate-800 shrink-0 pb-3 xl:pb-0 xl:min-w-[210px]">
+                  {/* Title & Subtitle with Icon */}
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-xs shrink-0 ${
+                      isDark ? 'bg-[#103A2D] text-emerald-300 border border-emerald-500/40' : 'bg-[#0e2c22] text-white'
                     }`}>
-                      Package Dimensions
-                    </h2>
-                    <p className={`text-[10px] sm:text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'} mt-0.5`}>
-                      Enter the details of your package(s)
-                    </p>
+                      <Package className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
+                    <div className="shrink-0">
+                      <h2 className={`text-xs sm:text-sm font-black tracking-tight uppercase ${
+                        isDark ? 'text-white' : 'text-[#0e2c22]'
+                      }`}>
+                        Package Dimensions
+                      </h2>
+                      <p className="text-[10px] sm:text-[11px] text-helper-blue mt-0.5">
+                        Enter the details of your package(s)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Vertical Service Type Selection */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className={`block text-[11px] font-extrabold uppercase tracking-wider ${
+                      isDark ? 'text-slate-300' : 'text-slate-600'
+                    }`}>
+                      Service Type
+                    </span>
+                    <div className="flex flex-col gap-2.5" role="radiogroup" aria-label="Service Type Selection">
+                      <label className={`flex items-center gap-2.5 cursor-pointer text-[13.5px] font-bold uppercase tracking-wide transition-colors select-none ${
+                        serviceType === 'DOMESTIC'
+                          ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0e382c] font-extrabold'
+                          : isDark ? 'text-slate-300 font-semibold hover:text-white' : 'text-slate-700 font-semibold hover:text-slate-900'
+                      }`}>
+                        <input
+                          type="radio"
+                          id="service-type-domestic"
+                          name="serviceTypeSelection"
+                          value="DOMESTIC"
+                          checked={serviceType === 'DOMESTIC'}
+                          onChange={() => handleServiceTypeChange('DOMESTIC')}
+                          className="accent-[#107c5a] h-4.5 w-4.5 cursor-pointer"
+                        />
+                        <span>DOMESTIC</span>
+                      </label>
+                      <label className={`flex items-center gap-2.5 cursor-pointer text-[13.5px] font-bold uppercase tracking-wide transition-colors select-none ${
+                        serviceType === 'INTERNATIONAL'
+                          ? isDark ? 'text-emerald-300 font-extrabold' : 'text-[#0e382c] font-extrabold'
+                          : isDark ? 'text-slate-300 font-semibold hover:text-white' : 'text-slate-700 font-semibold hover:text-slate-900'
+                      }`}>
+                        <input
+                          type="radio"
+                          id="service-type-international"
+                          name="serviceTypeSelection"
+                          value="INTERNATIONAL"
+                          checked={serviceType === 'INTERNATIONAL'}
+                          onChange={() => handleServiceTypeChange('INTERNATIONAL')}
+                          className="accent-[#107c5a] h-4.5 w-4.5 cursor-pointer"
+                        />
+                        <span>INTERNATIONAL</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
@@ -1434,7 +1439,7 @@ function CalculatorContent() {
                     >
                       <Info className="w-3.5 h-3.5" />
                     </span>
-                    <span className={`text-[10px] sm:text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'} ml-1 hidden sm:inline`}>
+                    <span className="text-[10px] sm:text-[11px] text-helper-blue ml-1 hidden sm:inline">
                       Select from existing modes or add a custom mode
                     </span>
                   </div>
@@ -2651,7 +2656,7 @@ function CalculatorContent() {
                   <Calculator className="w-6 h-6" />
                 </div>
                 <span className={`font-bold text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Ready to Evaluate</span>
-                <p className={`text-[11px] leading-normal max-w-[200px] mx-auto font-light ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>
+                <p className="text-[11px] leading-normal max-w-[200px] mx-auto font-light text-helper-blue">
                   Configure package parameters and click compute to evaluate shipping weights.
                 </p>
               </div>

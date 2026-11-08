@@ -192,7 +192,7 @@ ${companyName}`;
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Share Quotation / Document" size="md">
       <div className="space-y-5 py-2">
-        <p className="text-xs text-slate-500 font-medium">
+        <p className="text-xs text-helper-blue font-medium">
           Choose a method to share the generated document (<strong>{pdfFilename}</strong>) with your customer.
         </p>
 

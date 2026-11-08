@@ -795,7 +795,7 @@ export default function InternationalRateCardManager({
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-bold text-slate-900 focus:bg-white focus:outline-none"
             />
             <div className="flex flex-wrap gap-1.5 mt-2">
-              <span className="text-[10px] text-slate-400 font-bold self-center mr-1">Quick Select:</span>
+              <span className="text-[10px] text-helper-blue font-bold self-center mr-1">Quick Select:</span>
               {['1–2 Days', '2–4 Days', '3–5 Days', '5–7 Days', '7–10 Days', '10–15 Days'].map((preset) => (
                 <button
                   key={preset}
@@ -836,7 +836,7 @@ export default function InternationalRateCardManager({
             </div>
 
             {otherCharges.length === 0 ? (
-              <p className="text-[11px] text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+              <p className="text-[11px] text-helper-blue italic bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
                 No additional charges added for this country. Click &quot;+ Add Other Charge&quot; to configure Fuel Surcharges, Handling, or Documentation.
               </p>
             ) : (

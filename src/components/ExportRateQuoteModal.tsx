@@ -1007,7 +1007,7 @@ export default function ExportRateQuoteModal({
                 <div className="pt-6 border-t border-slate-200 flex justify-between items-end text-[10px] mt-6">
                   <div>
                     <p className="text-slate-500 font-medium">Thank you for choosing our services.</p>
-                    <p className="text-[8.5px] text-slate-400 italic mt-0.5">This document is a formal quotation based on calculation criteria.</p>
+                    <p className="text-[8.5px] text-helper-blue italic mt-0.5">This document is a formal quotation based on calculation criteria.</p>
                   </div>
                   <div className="text-right space-y-1">
                     <p className="text-slate-600 font-medium">Yours faithfully,</p>

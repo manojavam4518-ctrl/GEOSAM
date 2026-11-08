@@ -125,6 +125,22 @@ export const PLATFORM_MODULES: Record<string, ModuleDefinition> = {
     defaultPrice: 350,
     routes: ['/dashboard/shipping-labels'],
   },
+  DECLARATIONS: {
+    key: 'DECLARATIONS',
+    name: 'Goods Declaration Note',
+    description: 'Official goods and shipment declaration notes with consignor digital signature and mobile OTP verification',
+    category: 'LOGISTICS',
+    defaultPrice: 250,
+    routes: ['/dashboard/declarations'],
+  },
+  INTERNATIONAL_TOOLS: {
+    key: 'INTERNATIONAL_TOOLS',
+    name: 'International Tools',
+    description: 'International freight calculator, global country zones, volumetric weight & customs documentation tools',
+    category: 'LOGISTICS',
+    defaultPrice: 350,
+    routes: ['/dashboard/international-tools', '/dashboard/international-tools/proforma-invoice'],
+  },
   PACKAGING_SHOP: {
     key: 'PACKAGING_SHOP',
     name: 'Cargo Packaging Shop',
@@ -144,7 +160,7 @@ export const DEFAULT_PREDEFINED_ROLES = [
   {
     name: 'Operations Executive',
     description: 'User responsible for shipment weight calculation, rate comparisons, history, and carrier tracking.',
-    moduleKeys: ['WEIGHT_CALCULATOR', 'RATE_CALCULATOR', 'CALCULATION_HISTORY', 'CARRIER_TRACKING', 'SHIPPING_LABEL_GENERATOR'],
+    moduleKeys: ['WEIGHT_CALCULATOR', 'RATE_CALCULATOR', 'CALCULATION_HISTORY', 'CARRIER_TRACKING', 'SHIPPING_LABEL_GENERATOR', 'DECLARATIONS'],
   },
   {
     name: 'HR Executive',
@@ -154,7 +170,7 @@ export const DEFAULT_PREDEFINED_ROLES = [
   {
     name: 'Logistics Coordinator',
     description: 'Coordinates cargo logistics with rate calculation, rate cards, pincode lookup, carrier tracking, and shipping labels.',
-    moduleKeys: ['WEIGHT_CALCULATOR', 'RATE_CALCULATOR', 'RATE_CARDS', 'PINCODE_LOOKUP', 'CARRIER_TRACKING', 'SHIPPING_LABEL_GENERATOR'],
+    moduleKeys: ['WEIGHT_CALCULATOR', 'RATE_CALCULATOR', 'RATE_CARDS', 'PINCODE_LOOKUP', 'CARRIER_TRACKING', 'SHIPPING_LABEL_GENERATOR', 'DECLARATIONS'],
   },
 ];
 

@@ -696,7 +696,7 @@ export default function SubscriptionsPage() {
 
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col justify-between">
                   <div>
-                    <span className="block text-[9px] text-slate-400 font-bold uppercase mb-2">Instructions</span>
+                    <span className="block text-[9px] text-helper-blue font-bold uppercase mb-2">Instructions</span>
                     <p className="text-xs text-slate-600 leading-relaxed font-light">
                       {paymentSettings?.bankInstructions || 'Transfer via NEFT/IMPS. Mention your name in transaction remarks.'}
                     </p>

@@ -1505,7 +1505,7 @@ export default function RateCalculatorPage() {
           </div>
 
           {/* Footer info */}
-          <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400 font-light">
+          <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-helper-blue font-light">
             Thank you for choosing GEO SAM. This rate summary is for comparison purposes only.
           </div>
 
